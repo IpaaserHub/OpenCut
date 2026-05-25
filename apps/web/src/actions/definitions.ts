@@ -152,6 +152,21 @@ export const ACTIONS = {
 
 export type TAction = keyof typeof ACTIONS;
 
+const REQUIRED_ARG_ACTIONS: ReadonlySet<string> = new Set([
+	"remove-media-asset",
+	"remove-media-assets",
+]);
+
+export function isAction(value: string): value is TAction {
+	return value in ACTIONS;
+}
+
+export function isActionWithOptionalArgs(
+	value: string,
+): value is TActionWithOptionalArgs {
+	return isAction(value) && !REQUIRED_ARG_ACTIONS.has(value);
+}
+
 const ACTION_DEFAULT_SHORTCUTS = [
 	["toggle-play", ["space", "k"]],
 	["seek-forward", ["l"]],

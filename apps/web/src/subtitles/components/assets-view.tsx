@@ -7,6 +7,7 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import { ChevronDown, ChevronUp } from "lucide-react";
 import { useReducer, useRef, useState } from "react";
 import { extractTimelineAudio } from "@/media/mediabunny";
 import { useEditor } from "@/editor/use-editor";
@@ -23,6 +24,11 @@ import { decodeAudioToFloat32 } from "@/media/audio";
 import { buildCaptionChunks } from "@/transcription/caption";
 import { insertCaptionChunksAsTextTrack } from "@/subtitles/insert";
 import { parseSubtitleFile } from "@/subtitles/parse";
+import {
+	DEFAULT_CAPTION_LINE_CHARACTERS,
+	MAX_CAPTION_LINE_CHARACTERS,
+	MIN_CAPTION_LINE_CHARACTERS,
+} from "@/transcription/caption-defaults";
 import { Spinner } from "@/components/ui/spinner";
 import {
 	Section,
@@ -64,6 +70,13 @@ const IDLE_STATE: ProcessingState = {
 	warnings: [],
 };
 
+function clampCaptionLineCharacterCount({ value }: { value: number }): number {
+	return Math.min(
+		MAX_CAPTION_LINE_CHARACTERS,
+		Math.max(MIN_CAPTION_LINE_CHARACTERS, value),
+	);
+}
+
 /* eslint-disable opencut/prefer-object-params -- React reducers must accept (state, action). */
 function processingReducer(
 	state: ProcessingState,
@@ -85,7 +98,13 @@ function processingReducer(
 
 export function Captions() {
 	const [selectedLanguage, setSelectedLanguage] =
-		useState<TranscriptionLanguage>("auto");
+		useState<TranscriptionLanguage>("ja");
+	const [lineCharacterCount, setLineCharacterCount] = useState(
+		DEFAULT_CAPTION_LINE_CHARACTERS,
+	);
+	const [lineCharacterCountInput, setLineCharacterCountInput] = useState(
+		String(DEFAULT_CAPTION_LINE_CHARACTERS),
+	);
 	const [processing, dispatch] = useReducer(processingReducer, IDLE_STATE);
 	const containerRef = useRef<HTMLDivElement>(null);
 	const fileInputRef = useRef<HTMLInputElement>(null);
@@ -101,10 +120,10 @@ export function Captions() {
 		if (progress.status === "loading-model") {
 			dispatch({
 				type: "update_step",
-				step: `Loading model ${Math.round(progress.progress)}%`,
+				step: `モデルを読み込み中 ${Math.round(progress.progress)}%`,
 			});
 		} else if (progress.status === "transcribing") {
-			dispatch({ type: "update_step", step: "Transcribing..." });
+			dispatch({ type: "update_step", step: "文字起こし中..." });
 		}
 	};
 
@@ -118,7 +137,7 @@ export function Captions() {
 	};
 
 	const handleGenerateTranscript = async () => {
-		dispatch({ type: "start", step: "Extracting audio..." });
+		dispatch({ type: "start", step: "音声を抽出中..." });
 		try {
 			const audioBlob = await extractTimelineAudio({
 				tracks: editor.scenes.getActiveScene().tracks,
@@ -126,7 +145,7 @@ export function Captions() {
 				totalDuration: editor.timeline.getTotalDuration(),
 			});
 
-			dispatch({ type: "update_step", step: "Preparing audio..." });
+			dispatch({ type: "update_step", step: "音声を準備中..." });
 			const { samples } = await decodeAudioToFloat32({
 				audioBlob,
 				sampleRate: DEFAULT_TRANSCRIPTION_SAMPLE_RATE,
@@ -134,15 +153,18 @@ export function Captions() {
 
 			const result = await transcriptionService.transcribe({
 				audioData: samples,
-				language: selectedLanguage === "auto" ? undefined : selectedLanguage,
+				language: selectedLanguage,
 				onProgress: handleProgress,
 			});
 
-			dispatch({ type: "update_step", step: "Generating captions..." });
-			const captionChunks = buildCaptionChunks({ segments: result.segments });
+			dispatch({ type: "update_step", step: "字幕を生成中..." });
+			const captionChunks = buildCaptionChunks({
+				segments: result.segments,
+				lineCharacterCount,
+			});
 
 			if (!insertCaptions({ captions: captionChunks })) {
-				dispatch({ type: "fail", error: "No captions were generated" });
+				dispatch({ type: "fail", error: "字幕を生成できませんでした" });
 				return;
 			}
 
@@ -154,7 +176,7 @@ export function Captions() {
 				error:
 					error instanceof Error
 						? error.message
-						: "An unexpected error occurred",
+						: "予期しないエラーが発生しました",
 			});
 		}
 	};
@@ -164,7 +186,7 @@ export function Captions() {
 	};
 
 	const handleImportFile = async ({ file }: { file: File }) => {
-		dispatch({ type: "start", step: "Reading subtitle file..." });
+		dispatch({ type: "start", step: "字幕ファイルを読み込み中..." });
 		try {
 			const input = await file.text();
 			const result = parseSubtitleFile({
@@ -175,22 +197,22 @@ export function Captions() {
 			if (result.captions.length === 0) {
 				dispatch({
 					type: "fail",
-					error: "No valid subtitle cues were found in the subtitle file",
+					error: "字幕ファイルに有効な字幕データが見つかりませんでした",
 				});
 				return;
 			}
 
-			dispatch({ type: "update_step", step: "Importing subtitles..." });
+			dispatch({ type: "update_step", step: "字幕を読み込み中..." });
 
 			if (!insertCaptions({ captions: result.captions })) {
-				dispatch({ type: "fail", error: "No captions were generated" });
+				dispatch({ type: "fail", error: "字幕を生成できませんでした" });
 				return;
 			}
 
 			const nextWarnings = [...result.warnings];
 			if (result.skippedCueCount > 0) {
 				nextWarnings.unshift(
-					`Imported ${result.captions.length} subtitle cue(s) and skipped ${result.skippedCueCount} malformed cue(s).`,
+					`${result.captions.length} 件の字幕を読み込み、形式が不正な ${result.skippedCueCount} 件をスキップしました。`,
 				);
 			}
 
@@ -202,7 +224,7 @@ export function Captions() {
 				error:
 					error instanceof Error
 						? error.message
-						: "An unexpected error occurred",
+						: "予期しないエラーが発生しました",
 			});
 		}
 	};
@@ -222,11 +244,6 @@ export function Captions() {
 	};
 
 	const handleLanguageChange = ({ value }: { value: string }) => {
-		if (value === "auto") {
-			setSelectedLanguage("auto");
-			return;
-		}
-
 		const matchedLanguage = TRANSCRIPTION_LANGUAGES.find(
 			(language) => language.code === value,
 		);
@@ -234,12 +251,34 @@ export function Captions() {
 		setSelectedLanguage(matchedLanguage.code);
 	};
 
+	const commitLineCharacterCount = ({ value }: { value: number }) => {
+		const nextValue = clampCaptionLineCharacterCount({ value });
+		setLineCharacterCount(nextValue);
+		setLineCharacterCountInput(String(nextValue));
+	};
+
+	const handleLineCharacterInputChange = ({
+		event,
+	}: {
+		event: React.ChangeEvent<HTMLInputElement>;
+	}) => {
+		const nextInput = event.target.value.replace(/\D/g, "");
+		setLineCharacterCountInput(nextInput);
+
+		if (!nextInput) return;
+
+		const parsedValue = Number.parseInt(nextInput, 10);
+		if (Number.isFinite(parsedValue)) {
+			commitLineCharacterCount({ value: parsedValue });
+		}
+	};
+
 	const error = processing.status === "idle" ? processing.error : null;
 	const warnings = processing.status === "idle" ? processing.warnings : [];
 
 	return (
 		<PanelView
-			title="Captions"
+			title="字幕"
 			contentClassName="px-0 flex flex-col h-full"
 			actions={
 				<TooltipProvider>
@@ -268,7 +307,7 @@ export function Captions() {
 							className="items-center justify-center gap-1.5"
 						>
 							<HugeiconsIcon icon={CloudUploadIcon} />
-							Import
+							読み込み
 						</Button>
 					</div>
 				</TooltipProvider>
@@ -289,16 +328,15 @@ export function Captions() {
 			>
 				<SectionContent className="flex flex-col gap-4 h-full pt-1">
 					<SectionFields>
-						<SectionField label="Language">
+						<SectionField label="言語">
 							<Select
 								value={selectedLanguage}
 								onValueChange={(value) => handleLanguageChange({ value })}
 							>
 								<SelectTrigger>
-									<SelectValue placeholder="Select a language" />
+									<SelectValue placeholder="言語を選択" />
 								</SelectTrigger>
 								<SelectContent>
-									<SelectItem value="auto">Auto detect</SelectItem>
 									{TRANSCRIPTION_LANGUAGES.map((language) => (
 										<SelectItem key={language.code} value={language.code}>
 											{language.name}
@@ -306,6 +344,61 @@ export function Captions() {
 									))}
 								</SelectContent>
 							</Select>
+						</SectionField>
+						<SectionField label="改行文字数">
+							<div className="border-border bg-accent focus-within:border-primary flex h-7 w-full overflow-hidden rounded-md border">
+								<input
+									type="text"
+									inputMode="numeric"
+									pattern="[0-9]*"
+									value={lineCharacterCountInput}
+									onChange={(event) =>
+										handleLineCharacterInputChange({ event })
+									}
+									onBlur={() =>
+										commitLineCharacterCount({ value: lineCharacterCount })
+									}
+									onKeyDown={(event) => {
+										if (event.key === "Enter" || event.key === "Escape") {
+											event.currentTarget.blur();
+										}
+									}}
+									aria-label="改行文字数"
+									className="min-w-0 flex-1 bg-transparent px-2.5 text-sm outline-none"
+								/>
+								<div className="border-border flex w-7 shrink-0 flex-col border-l">
+									<button
+										type="button"
+										aria-label="改行文字数を増やす"
+										disabled={
+											lineCharacterCount >= MAX_CAPTION_LINE_CHARACTERS
+										}
+										className="hover:bg-background/70 flex min-h-0 flex-1 items-center justify-center text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
+										onClick={() =>
+											commitLineCharacterCount({
+												value: lineCharacterCount + 1,
+											})
+										}
+									>
+										<ChevronUp className="size-3" />
+									</button>
+									<button
+										type="button"
+										aria-label="改行文字数を減らす"
+										disabled={
+											lineCharacterCount <= MIN_CAPTION_LINE_CHARACTERS
+										}
+										className="hover:bg-background/70 flex min-h-0 flex-1 items-center justify-center border-border border-t text-muted-foreground disabled:cursor-not-allowed disabled:opacity-40"
+										onClick={() =>
+											commitLineCharacterCount({
+												value: lineCharacterCount - 1,
+											})
+										}
+									>
+										<ChevronDown className="size-3" />
+									</button>
+								</div>
+							</div>
 						</SectionField>
 					</SectionFields>
 
@@ -316,7 +409,7 @@ export function Captions() {
 						disabled={isProcessing || activeDiagnostics.length > 0}
 					>
 						{isProcessing && <Spinner className="mr-1" />}
-						{isProcessing ? processing.step : "Generate transcript"}
+						{isProcessing ? processing.step : "文字起こしを生成"}
 					</Button>
 					{error && (
 						<div className="bg-destructive/10 border-destructive/20 rounded-md border p-3">

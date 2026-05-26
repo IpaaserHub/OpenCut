@@ -21,3 +21,16 @@ Each app is a frontend that calls into Rust. Logic is never duplicated between a
 
 - Read components before using them. They may already apply classes, which affects what you need to pass and how to override them.
 
+## SNSDir Deployment Scope
+
+For SNSDir-related work, "deploy", "merge to production", or "merge to the
+deployment environment" does not mean deploying this shared editor alone.
+Delivery is complete only when:
+
+- The shared editor change is deployed.
+- The change is usable through every integrated SNSDir production app,
+  currently YTDir (`yt-dir.com`) and TKDir (`tkdir.com`), including tenant
+  subdomains where applicable.
+- The affected workflow is verified for the intended user roles, or any
+  unverified service or role is explicitly reported as incomplete.
+

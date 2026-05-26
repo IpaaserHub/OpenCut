@@ -2,6 +2,18 @@ import type { NextConfig } from "next";
 import { withBotId } from "botid/next/config";
 import { withContentCollections } from "@content-collections/next";
 
+const frameAncestors = [
+	"'self'",
+	"https://yt-dir.com",
+	"https://*.yt-dir.com",
+	"https://tkdir.com",
+	"https://*.tkdir.com",
+	"https://tk-dir.com",
+	"https://*.tk-dir.com",
+	...(process.env.VERCEL_ENV === "preview" ? ["https://*.vercel.app"] : []),
+	...(process.env.NODE_ENV === "production" ? [] : ["http://localhost:*"]),
+];
+
 const nextConfig = {
 	compiler: {
 		removeConsole: process.env.NODE_ENV === "production",
@@ -9,6 +21,19 @@ const nextConfig = {
 	reactStrictMode: true,
 	productionBrowserSourceMaps: true,
 	output: "standalone",
+	async headers() {
+		return [
+			{
+				source: "/:path*",
+				headers: [
+					{
+						key: "Content-Security-Policy",
+						value: `frame-ancestors ${frameAncestors.join(" ")};`,
+					},
+				],
+			},
+		];
+	},
 	images: {
 		remotePatterns: [
 			{

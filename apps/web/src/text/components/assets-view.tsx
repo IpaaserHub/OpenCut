@@ -16,7 +16,114 @@ import { buildTextElement } from "@/timeline/element-utils";
 import type { TextElement } from "@/timeline";
 import type { MediaTime } from "@/wasm";
 
-const DEFAULT_TEXT_TEMPLATE_ID = "default-text-template";
+interface BuiltInTextTemplate {
+	id: string;
+	name: string;
+	params: Partial<ParamValues>;
+}
+
+const BUILT_IN_TEXT_TEMPLATES = [
+	{
+		id: "standard-text-template",
+		name: "標準テキスト",
+		params: DEFAULTS.text.element.params,
+	},
+	{
+		id: "black-background-white-text-template",
+		name: "黒背景 白文字",
+		params: {
+			content: "テキスト",
+			fontSize: 18,
+			color: "#ffffff",
+			textAlign: "center",
+			fontWeight: "bold",
+			"background.enabled": true,
+			"background.color": "#000000",
+			"background.cornerRadius": 16,
+			"background.paddingX": 36,
+			"background.paddingY": 16,
+		},
+	},
+	{
+		id: "white-background-black-text-template",
+		name: "白背景 黒文字",
+		params: {
+			content: "テキスト",
+			fontSize: 18,
+			color: "#111111",
+			textAlign: "center",
+			fontWeight: "bold",
+			"background.enabled": true,
+			"background.color": "#ffffff",
+			"background.cornerRadius": 16,
+			"background.paddingX": 36,
+			"background.paddingY": 16,
+		},
+	},
+	{
+		id: "yellow-marker-text-template",
+		name: "黄色マーカー",
+		params: {
+			content: "POINT",
+			fontSize: 20,
+			color: "#111111",
+			textAlign: "center",
+			fontWeight: "bold",
+			"background.enabled": true,
+			"background.color": "#facc15",
+			"background.cornerRadius": 12,
+			"background.paddingX": 34,
+			"background.paddingY": 12,
+		},
+	},
+	{
+		id: "red-emphasis-text-template",
+		name: "赤強調",
+		params: {
+			content: "重要",
+			fontSize: 22,
+			color: "#ffffff",
+			textAlign: "center",
+			fontWeight: "bold",
+			"background.enabled": true,
+			"background.color": "#dc2626",
+			"background.cornerRadius": 14,
+			"background.paddingX": 36,
+			"background.paddingY": 14,
+		},
+	},
+	{
+		id: "headline-text-template",
+		name: "見出し",
+		params: {
+			content: "タイトル",
+			fontSize: 28,
+			color: "#ffffff",
+			textAlign: "center",
+			fontWeight: "bold",
+			letterSpacing: 0,
+			"background.enabled": false,
+		},
+	},
+	{
+		id: "lower-third-text-template",
+		name: "下帯テロップ",
+		params: {
+			content: "ここにテロップ",
+			fontSize: 16,
+			color: "#ffffff",
+			textAlign: "center",
+			fontWeight: "bold",
+			"background.enabled": true,
+			"background.color": "#111827",
+			"background.cornerRadius": 0,
+			"background.paddingX": 120,
+			"background.paddingY": 16,
+			"transform.positionY": 340,
+		},
+	},
+] satisfies readonly BuiltInTextTemplate[];
+
 const FALLBACK_TEXT_CONTENT =
 	typeof DEFAULTS.text.element.params.content === "string"
 		? DEFAULTS.text.element.params.content
@@ -137,12 +244,15 @@ export function TextView() {
 				className="grid gap-2"
 				style={{ gridTemplateColumns: "repeat(auto-fill, minmax(96px, 1fr))" }}
 			>
-				<TextTemplateItem
-					id={DEFAULT_TEXT_TEMPLATE_ID}
-					name="標準テキスト"
-					params={DEFAULTS.text.element.params}
-					onAddToTimeline={handleAddToTimeline}
-				/>
+				{BUILT_IN_TEXT_TEMPLATES.map((template) => (
+					<TextTemplateItem
+						key={template.id}
+						id={template.id}
+						name={template.name}
+						params={template.params}
+						onAddToTimeline={handleAddToTimeline}
+					/>
+				))}
 				{templates.map((template) => (
 					<TextTemplateItem
 						key={template.id}

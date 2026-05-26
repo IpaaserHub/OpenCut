@@ -122,13 +122,14 @@ export function TextView() {
 				<Button
 					type="button"
 					variant="outline"
-					size="icon"
+					size="sm"
 					onClick={handleSaveSelectedText}
 					disabled={!selectedTextElement}
 					aria-label="テンプレートを保存"
 					title="テンプレートを保存"
 				>
 					<Save />
+					<span>保存</span>
 				</Button>
 			}
 		>

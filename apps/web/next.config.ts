@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 import { withBotId } from "botid/next/config";
 import { withContentCollections } from "@content-collections/next";
 
-const nextConfig: NextConfig = {
+const nextConfig = {
 	compiler: {
 		removeConsole: process.env.NODE_ENV === "production",
 	},
@@ -49,6 +49,6 @@ const nextConfig: NextConfig = {
 			},
 		],
 	},
-};
+} satisfies NextConfig;
 
 export default withContentCollections(withBotId(nextConfig));

@@ -384,10 +384,14 @@ export class DragDropController {
 		target: DropTarget;
 		dragData: Extract<TimelineDragData, { type: "text" }>;
 	}): void {
+		const params = {
+			...(dragData.params ?? {}),
+			content: dragData.content,
+		};
 		const element = buildTextElement({
 			raw: {
 				name: dragData.name ?? "",
-				params: { content: dragData.content ?? "" },
+				params,
 			},
 			startTime: target.xPosition,
 		});

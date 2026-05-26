@@ -129,7 +129,7 @@ export function TextView() {
 					title="テンプレートを保存"
 				>
 					<Save />
-					<span>保存</span>
+					<span>テンプレ保存</span>
 				</Button>
 			}
 		>

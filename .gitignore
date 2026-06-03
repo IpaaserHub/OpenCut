@@ -19,6 +19,9 @@ bun.lockb
 # Twiggy
 .cursor/
 
+# git worktrees
+.worktrees/
+
 .open-next
 
 target/

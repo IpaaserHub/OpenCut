@@ -18,8 +18,14 @@ import {
 	ContextMenu,
 	ContextMenuContent,
 	ContextMenuItem,
+	ContextMenuSub,
+	ContextMenuSubContent,
+	ContextMenuSubTrigger,
 	ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { useTextTemplates } from "@/text/templates-store";
+import { buildApplyStyleToTrackUpdates } from "@/short-gen/bulk-telop-style";
+import { UpdateElementsCommand } from "@/commands/timeline";
 import { useTimelineZoom } from "@/timeline/hooks/use-timeline-zoom";
 import {
 	useCallback,
@@ -302,12 +308,12 @@ export function Timeline() {
 
 	const { dragView, handleElementMouseDown, handleElementClick } =
 		useElementInteraction({
-		zoomLevel,
-		tracksContainerRef,
-		tracksScrollRef,
-		snappingEnabled,
-		onSnapPointChange: handleSnapPointChange,
-	});
+			zoomLevel,
+			tracksContainerRef,
+			tracksScrollRef,
+			snappingEnabled,
+			onSnapPointChange: handleSnapPointChange,
+		});
 	const isElementDragging = dragView.kind === "dragging";
 
 	const {
@@ -455,9 +461,7 @@ export function Timeline() {
 					className="relative isolate flex flex-1 flex-col overflow-hidden"
 					ref={tracksContainerRef}
 				>
-					<SelectionBox
-						bounds={selectionBox?.bounds ?? null}
-					/>
+					<SelectionBox bounds={selectionBox?.bounds ?? null} />
 					<DragLine
 						dropTarget={dropTarget}
 						tracks={tracks}
@@ -751,8 +755,10 @@ function TimelineTrackRows({
 	isDragOver: boolean;
 	dropTarget: DropTarget | null;
 }) {
-	const timeline = useEditor((e) => e.timeline);
+	const editor = useEditor();
+	const timeline = editor.timeline;
 	const scene = useEditor((e) => e.scenes.getActiveSceneOrNull());
+	const textTemplates = useTextTemplates();
 	const tracks = useMemo<TimelineTrack[]>(
 		() =>
 			scene
@@ -780,8 +786,8 @@ function TimelineTrackRows({
 	const draggingElementIds = useMemo(
 		() =>
 			dragView.kind === "dragging"
-			? dragView.memberTimeOffsets
-			: (null as ReadonlyMap<string, MediaTime> | null),
+				? dragView.memberTimeOffsets
+				: (null as ReadonlyMap<string, MediaTime> | null),
 		[dragView],
 	);
 	const sortedTracks = useMemo(() => {
@@ -845,6 +851,73 @@ function TimelineTrackRows({
 						>
 							Paste elements
 						</ContextMenuItem>
+						{track.type === "text" &&
+							(() => {
+								const selectedOnTrack = selectedElements.filter(
+									(ref) => ref.trackId === track.id,
+								);
+								const canPropagate = selectedOnTrack.length === 1;
+								return (
+									<>
+										<ContextMenuSub>
+											<ContextMenuSubTrigger
+												icon={<HugeiconsIcon icon={TextIcon} />}
+											>
+												テロップスタイルを適用
+											</ContextMenuSubTrigger>
+											<ContextMenuSubContent className="w-48">
+												{textTemplates.length === 0 ? (
+													<ContextMenuItem disabled>
+														テンプレートがありません
+													</ContextMenuItem>
+												) : (
+													textTemplates.map((template) => (
+														<ContextMenuItem
+															key={template.id}
+															onClick={(event: React.MouseEvent) => {
+																event.stopPropagation();
+																editor.command.execute({
+																	command: new UpdateElementsCommand({
+																		updates: buildApplyStyleToTrackUpdates({
+																			track,
+																			styleParams: template.params,
+																		}),
+																	}),
+																});
+															}}
+														>
+															{template.name}
+														</ContextMenuItem>
+													))
+												)}
+											</ContextMenuSubContent>
+										</ContextMenuSub>
+										<ContextMenuItem
+											icon={<HugeiconsIcon icon={MagicWand05Icon} />}
+											disabled={!canPropagate}
+											onClick={(event: React.MouseEvent) => {
+												event.stopPropagation();
+												const selectedRef = selectedOnTrack[0];
+												if (!selectedRef) return;
+												const selectedElement = track.elements.find(
+													(element) => element.id === selectedRef.elementId,
+												);
+												if (!selectedElement) return;
+												editor.command.execute({
+													command: new UpdateElementsCommand({
+														updates: buildApplyStyleToTrackUpdates({
+															track,
+															styleParams: selectedElement.params,
+														}),
+													}),
+												});
+											}}
+										>
+											選択テロップのスタイルを全部に反映
+										</ContextMenuItem>
+									</>
+								);
+							})()}
 						<ContextMenuItem
 							icon={<HugeiconsIcon icon={VolumeHighIcon} />}
 							onClick={(event: React.MouseEvent) => {

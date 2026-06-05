@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import Image from "next/image";
+import { ChevronDown } from "lucide-react";
 import { PanelView } from "@/components/editor/panels/assets/views/base-panel";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -32,6 +33,15 @@ import {
 	SelectTrigger,
 	SelectValue,
 } from "@/components/ui/select";
+import {
+	Dialog,
+	DialogBody,
+	DialogContent,
+	DialogDescription,
+	DialogHeader,
+	DialogTitle,
+	DialogTrigger,
+} from "@/components/ui/dialog";
 import { cn } from "@/utils/ui";
 
 const LENGTH_PRESETS = [15, 30, 60] as const;
@@ -86,11 +96,14 @@ export function AiShortView() {
 		source: SourceVideo;
 	} | null>(null);
 	const [isReviewOpen, setIsReviewOpen] = useState(false);
+	const [sourceOpen, setSourceOpen] = useState(false);
+	const [presetOpen, setPresetOpen] = useState(false);
 
 	const selectedAsset =
 		videoAssets.find((asset) => asset.id === selectedSourceId) ?? null;
 	// A source with no audio track can't be transcribed, so it can't drive a short.
 	const canGenerate = selectedAsset !== null && selectedAsset.hasAudio !== false;
+	const selectedPreset = PRESETS.find((preset) => preset.id === presetId);
 
 	const telopStyleParams =
 		selectedTemplateId === DEFAULT_TELOP_STYLE_ID
@@ -234,47 +247,101 @@ export function AiShortView() {
 						まずメディアに動画を追加してください。
 					</p>
 				) : (
-					<div className="flex flex-col gap-1.5">
-						{videoAssets.map((asset) => {
-							const isSelected = asset.id === selectedSourceId;
-							return (
-								<button
-									key={asset.id}
-									type="button"
-									disabled={isGenerating}
-									onClick={() => setSelectedSourceId(asset.id)}
-									className={cn(
-										"flex items-center gap-2 rounded-md border p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-										isSelected
-											? "border-primary bg-primary/10"
-											: "border-border bg-accent hover:border-primary/50",
-									)}
-								>
-									<div className="relative h-9 w-16 shrink-0 overflow-hidden rounded">
-										{asset.thumbnailUrl ? (
-											<Image
-												src={asset.thumbnailUrl}
-												alt=""
-												fill
-												sizes="64px"
-												className="object-cover"
-												unoptimized
-											/>
-										) : (
-											<div className="bg-muted size-full" />
-										)}
-									</div>
-									<div className="flex min-w-0 flex-col">
-										<span className="truncate text-sm">{asset.name}</span>
-										<span className="text-muted-foreground text-xs">
-											{formatDuration({ seconds: asset.duration })}
-											{asset.hasAudio === false ? " ・音声なし" : ""}
-										</span>
-									</div>
-								</button>
-							);
-						})}
-					</div>
+					<Dialog open={sourceOpen} onOpenChange={setSourceOpen}>
+						<DialogTrigger asChild>
+							<button
+								type="button"
+								disabled={isGenerating}
+								className="border-border bg-accent hover:border-primary/50 flex items-center gap-2 rounded-md border p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+							>
+								{selectedAsset ? (
+									<>
+										<div className="relative h-9 w-16 shrink-0 overflow-hidden rounded">
+											{selectedAsset.thumbnailUrl ? (
+												<Image
+													src={selectedAsset.thumbnailUrl}
+													alt=""
+													fill
+													sizes="64px"
+													className="object-cover"
+													unoptimized
+												/>
+											) : (
+												<div className="bg-muted size-full" />
+											)}
+										</div>
+										<div className="flex min-w-0 flex-1 flex-col">
+											<span className="truncate text-sm">
+												{selectedAsset.name}
+											</span>
+											<span className="text-muted-foreground text-xs">
+												{formatDuration({ seconds: selectedAsset.duration })}
+												{selectedAsset.hasAudio === false ? " ・音声なし" : ""}
+											</span>
+										</div>
+									</>
+								) : (
+									<span className="text-muted-foreground flex-1 text-sm">
+										動画を選択...
+									</span>
+								)}
+								<ChevronDown className="text-muted-foreground size-4 shrink-0" />
+							</button>
+						</DialogTrigger>
+						<DialogContent className="max-w-2xl">
+							<DialogHeader>
+								<DialogTitle>ソース動画を選択</DialogTitle>
+								<DialogDescription>
+									ショートの元になる動画を選んでください。
+								</DialogDescription>
+							</DialogHeader>
+							<DialogBody className="max-h-[60vh] overflow-y-auto">
+								<div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+									{videoAssets.map((asset) => {
+										const isSelected = asset.id === selectedSourceId;
+										return (
+											<button
+												key={asset.id}
+												type="button"
+												onClick={() => {
+													setSelectedSourceId(asset.id);
+													setSourceOpen(false);
+												}}
+												className={cn(
+													"flex flex-col gap-2 rounded-lg border p-2 text-left transition-colors",
+													isSelected
+														? "border-primary bg-primary/10 ring-primary ring-2"
+														: "border-border bg-accent hover:border-primary/50",
+												)}
+											>
+												<div className="bg-muted relative aspect-video w-full overflow-hidden rounded">
+													{asset.thumbnailUrl ? (
+														<Image
+															src={asset.thumbnailUrl}
+															alt=""
+															fill
+															sizes="(max-width: 640px) 50vw, 220px"
+															className="object-cover"
+															unoptimized
+														/>
+													) : null}
+												</div>
+												<div className="flex min-w-0 flex-col">
+													<span className="truncate text-sm font-medium">
+														{asset.name}
+													</span>
+													<span className="text-muted-foreground text-xs">
+														{formatDuration({ seconds: asset.duration })}
+														{asset.hasAudio === false ? " ・音声なし" : ""}
+													</span>
+												</div>
+											</button>
+										);
+									})}
+								</div>
+							</DialogBody>
+						</DialogContent>
+					</Dialog>
 				)}
 				{selectedAsset?.hasAudio === false && (
 					<p className="text-destructive text-xs">
@@ -285,30 +352,63 @@ export function AiShortView() {
 
 			<div className="flex flex-col gap-2">
 				<span className="text-muted-foreground text-sm">構成プリセット</span>
-				<div className="flex flex-col gap-1.5">
-					{PRESETS.map((preset) => {
-						const isSelected = preset.id === presetId;
-						return (
-							<button
-								key={preset.id}
-								type="button"
-								disabled={isGenerating}
-								onClick={() => setPresetId(preset.id)}
-								className={cn(
-									"flex flex-col gap-0.5 rounded-md border p-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
-									isSelected
-										? "border-primary bg-primary/10"
-										: "border-border bg-accent hover:border-primary/50",
-								)}
-							>
-								<span className="text-sm font-medium">{preset.label}</span>
-								<span className="text-muted-foreground text-xs">
-									{preset.description}
+				<Dialog open={presetOpen} onOpenChange={setPresetOpen}>
+					<DialogTrigger asChild>
+						<button
+							type="button"
+							disabled={isGenerating}
+							className="border-border bg-accent hover:border-primary/50 flex items-center gap-2 rounded-md border p-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+						>
+							<div className="flex min-w-0 flex-1 flex-col">
+								<span className="truncate text-sm font-medium">
+									{selectedPreset?.label ?? "プリセットを選択..."}
 								</span>
-							</button>
-						);
-					})}
-				</div>
+								{selectedPreset ? (
+									<span className="text-muted-foreground truncate text-xs">
+										{selectedPreset.description}
+									</span>
+								) : null}
+							</div>
+							<ChevronDown className="text-muted-foreground size-4 shrink-0" />
+						</button>
+					</DialogTrigger>
+					<DialogContent className="max-w-lg">
+						<DialogHeader>
+							<DialogTitle>構成プリセットを選択</DialogTitle>
+							<DialogDescription>
+								ショートの構成パターンを選んでください。
+							</DialogDescription>
+						</DialogHeader>
+						<DialogBody className="max-h-[60vh] overflow-y-auto">
+							<div className="flex flex-col gap-2">
+								{PRESETS.map((preset) => {
+									const isSelected = preset.id === presetId;
+									return (
+										<button
+											key={preset.id}
+											type="button"
+											onClick={() => {
+												setPresetId(preset.id);
+												setPresetOpen(false);
+											}}
+											className={cn(
+												"flex flex-col gap-0.5 rounded-lg border p-3 text-left transition-colors",
+												isSelected
+													? "border-primary bg-primary/10 ring-primary ring-2"
+													: "border-border bg-accent hover:border-primary/50",
+											)}
+										>
+											<span className="text-sm font-medium">{preset.label}</span>
+											<span className="text-muted-foreground text-xs">
+												{preset.description}
+											</span>
+										</button>
+									);
+								})}
+							</div>
+						</DialogBody>
+					</DialogContent>
+				</Dialog>
 			</div>
 
 			<div className="flex flex-col gap-2">

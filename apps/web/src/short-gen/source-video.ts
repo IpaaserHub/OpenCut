@@ -1,5 +1,7 @@
+import type { MediaAsset } from "@/media/types";
 import type { ParamValues } from "@/params";
 import type { TScene } from "@/timeline";
+import { buildDefaultElementParams } from "@/timeline/element-utils";
 
 /**
  * Locate the long source video being edited on the active scene.
@@ -24,4 +26,22 @@ export function findSourceVideo({
 		}
 	}
 	return null;
+}
+
+/**
+ * Build the source video descriptor from a media-library asset the user picked
+ * in the AI short panel (rather than scanning the active scene). The asset is
+ * not necessarily placed on any timeline, so we give it the default full-frame
+ * video params — the clips reference it by `mediaId`, which stays valid
+ * project-wide.
+ */
+export function sourceVideoFromAsset({
+	asset,
+}: {
+	asset: MediaAsset;
+}): { mediaId: string; params: ParamValues } {
+	return {
+		mediaId: asset.id,
+		params: buildDefaultElementParams({ type: "video" }),
+	};
 }

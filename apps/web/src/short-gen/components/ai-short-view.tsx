@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Image from "next/image";
 import { PanelView } from "@/components/editor/panels/assets/views/base-panel";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
@@ -15,8 +16,10 @@ import { PRESETS } from "@/short-gen/presets";
 import type { SegmentInput } from "@/short-gen/plan-to-specs";
 import type { ComposePlan } from "@/short-gen/schema";
 import { useTranscriptSegments } from "@/short-gen/segments-store";
+import { sourceVideoFromAsset } from "@/short-gen/source-video";
+import type { MediaAsset } from "@/media/types";
 import { useTextTemplates } from "@/text/templates-store";
-import { runTranscription } from "@/transcription/run-transcription";
+import { transcribeMediaAsset } from "@/transcription/run-transcription";
 import { TRANSCRIPTION_LANGUAGES } from "@/transcription/supported-languages";
 import type {
 	TranscriptionLanguage,
@@ -43,6 +46,15 @@ function clampTargetSeconds({ value }: { value: number }): number {
 	return Math.min(MAX_TARGET_SECONDS, Math.max(MIN_TARGET_SECONDS, value));
 }
 
+/** Format a duration in seconds as M:SS for the source picker. */
+function formatDuration({ seconds }: { seconds: number | undefined }): string {
+	if (!seconds || !Number.isFinite(seconds)) return "--:--";
+	const total = Math.round(seconds);
+	const minutes = Math.floor(total / 60);
+	const secs = total % 60;
+	return `${minutes}:${secs.toString().padStart(2, "0")}`;
+}
+
 type Status =
 	| { kind: "idle" }
 	| { kind: "running"; message: string }
@@ -52,6 +64,12 @@ type Status =
 export function AiShortView() {
 	const editor = useEditor();
 	const templates = useTextTemplates();
+	// Video assets from the media library, subscribed via the editor store so the
+	// picker updates as the user imports/removes media.
+	const videoAssets = useEditor((e) =>
+		e.media.getAssets().filter((asset) => asset.type === "video"),
+	);
+	const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
 	const [presetId, setPresetId] = useState<string>(PRESETS[0].id);
 	const [selectedTemplateId, setSelectedTemplateId] = useState<string>(
 		DEFAULT_TELOP_STYLE_ID,
@@ -68,6 +86,11 @@ export function AiShortView() {
 		source: SourceVideo;
 	} | null>(null);
 	const [isReviewOpen, setIsReviewOpen] = useState(false);
+
+	const selectedAsset =
+		videoAssets.find((asset) => asset.id === selectedSourceId) ?? null;
+	// A source with no audio track can't be transcribed, so it can't drive a short.
+	const canGenerate = selectedAsset !== null && selectedAsset.hasAudio !== false;
 
 	const telopStyleParams =
 		selectedTemplateId === DEFAULT_TELOP_STYLE_ID
@@ -98,11 +121,15 @@ export function AiShortView() {
 	 * Run transcription if the store is empty. Shared first step of both the
 	 * auto and review flows.
 	 */
-	const ensureTranscript = async () => {
-		if (useTranscriptSegments.getState().segments.length === 0) {
+	const ensureTranscript = async ({ asset }: { asset: MediaAsset }) => {
+		// Re-transcribe when the picked source video changes — the cached
+		// transcript belongs to a different (or no) asset.
+		const store = useTranscriptSegments.getState();
+		if (store.sourceMediaId !== asset.id || store.segments.length === 0) {
 			setStatus({ kind: "running", message: "文字起こし中..." });
-			await runTranscription({
+			await transcribeMediaAsset({
 				editor,
+				asset,
 				language,
 				onProgress: handleProgress,
 			});
@@ -110,10 +137,10 @@ export function AiShortView() {
 	};
 
 	const handleGenerateAuto = async () => {
-		if (isGenerating) return;
+		if (isGenerating || !selectedAsset) return;
 		setIsGenerating(true);
 		try {
-			await ensureTranscript();
+			await ensureTranscript({ asset: selectedAsset });
 
 			setStatus({ kind: "running", message: "ショートを生成中..." });
 			const result = await generateShort({
@@ -121,6 +148,7 @@ export function AiShortView() {
 				presetId,
 				targetSeconds,
 				telopStyleParams,
+				source: sourceVideoFromAsset({ asset: selectedAsset }),
 			});
 
 			if (result.ok) {
@@ -149,13 +177,18 @@ export function AiShortView() {
 	};
 
 	const handleGenerateReview = async () => {
-		if (isGenerating) return;
+		if (isGenerating || !selectedAsset) return;
 		setIsGenerating(true);
 		try {
-			await ensureTranscript();
+			await ensureTranscript({ asset: selectedAsset });
 
 			setStatus({ kind: "running", message: "ショートを生成中..." });
-			const prepared = await prepareShort({ editor, presetId, targetSeconds });
+			const prepared = await prepareShort({
+				editor,
+				presetId,
+				targetSeconds,
+				source: sourceVideoFromAsset({ asset: selectedAsset }),
+			});
 
 			if (prepared.ok) {
 				setReviewState({
@@ -194,6 +227,62 @@ export function AiShortView() {
 
 	return (
 		<PanelView title="AIショート" contentClassName="flex flex-col gap-5 pb-4">
+			<div className="flex flex-col gap-2">
+				<span className="text-muted-foreground text-sm">ソース動画</span>
+				{videoAssets.length === 0 ? (
+					<p className="text-muted-foreground rounded-md border border-dashed p-3 text-xs">
+						まずメディアに動画を追加してください。
+					</p>
+				) : (
+					<div className="flex flex-col gap-1.5">
+						{videoAssets.map((asset) => {
+							const isSelected = asset.id === selectedSourceId;
+							return (
+								<button
+									key={asset.id}
+									type="button"
+									disabled={isGenerating}
+									onClick={() => setSelectedSourceId(asset.id)}
+									className={cn(
+										"flex items-center gap-2 rounded-md border p-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60",
+										isSelected
+											? "border-primary bg-primary/10"
+											: "border-border bg-accent hover:border-primary/50",
+									)}
+								>
+									<div className="relative h-9 w-16 shrink-0 overflow-hidden rounded">
+										{asset.thumbnailUrl ? (
+											<Image
+												src={asset.thumbnailUrl}
+												alt=""
+												fill
+												sizes="64px"
+												className="object-cover"
+												unoptimized
+											/>
+										) : (
+											<div className="bg-muted size-full" />
+										)}
+									</div>
+									<div className="flex min-w-0 flex-col">
+										<span className="truncate text-sm">{asset.name}</span>
+										<span className="text-muted-foreground text-xs">
+											{formatDuration({ seconds: asset.duration })}
+											{asset.hasAudio === false ? " ・音声なし" : ""}
+										</span>
+									</div>
+								</button>
+							);
+						})}
+					</div>
+				)}
+				{selectedAsset?.hasAudio === false && (
+					<p className="text-destructive text-xs">
+						この動画は音声が無いため文字起こしできません。
+					</p>
+				)}
+			</div>
+
 			<div className="flex flex-col gap-2">
 				<span className="text-muted-foreground text-sm">構成プリセット</span>
 				<div className="flex flex-col gap-1.5">
@@ -320,7 +409,7 @@ export function AiShortView() {
 					type="button"
 					variant="outline"
 					className="w-full"
-					disabled={isGenerating}
+					disabled={isGenerating || !canGenerate}
 					onClick={handleGenerateReview}
 				>
 					{isGenerating && <Spinner className="mr-1" />}
@@ -329,11 +418,16 @@ export function AiShortView() {
 				<Button
 					type="button"
 					className="w-full"
-					disabled={isGenerating}
+					disabled={isGenerating || !canGenerate}
 					onClick={handleGenerateAuto}
 				>
 					全自動で作る
 				</Button>
+				{!selectedAsset && videoAssets.length > 0 && (
+					<p className="text-muted-foreground text-center text-xs">
+						上の「ソース動画」から1本選んでください
+					</p>
+				)}
 			</div>
 
 			{status.kind === "success" && (

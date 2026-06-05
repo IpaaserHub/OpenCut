@@ -90,7 +90,7 @@ export function requiresMediaId({
 	);
 }
 
-function buildDefaultElementParams({
+export function buildDefaultElementParams({
 	type,
 }: {
 	type: TimelineElement["type"];

@@ -97,19 +97,23 @@ export async function prepareShort({
 	presetId,
 	targetSeconds,
 	planner = fetchComposePlan,
+	source: explicitSource,
 }: {
 	editor: EditorCore;
 	presetId: string;
 	targetSeconds: number;
 	planner?: Planner;
+	source?: SourceVideo;
 }): Promise<PrepareResult> {
 	const storeSegments = useTranscriptSegments.getState().segments;
 	if (storeSegments.length === 0) {
 		return { ok: false, reason: "先に文字起こしを実行してください" };
 	}
 
+	// Prefer the source the user picked in the AI short panel; fall back to the
+	// first video on the active scene (legacy auto behavior).
 	const scene = editor.scenes.getActiveSceneOrNull();
-	const source = scene ? findSourceVideo({ scene }) : null;
+	const source = explicitSource ?? (scene ? findSourceVideo({ scene }) : null);
 	if (!source) {
 		return { ok: false, reason: "動画が見つかりません" };
 	}
@@ -235,18 +239,21 @@ export async function generateShort({
 	targetSeconds,
 	planner = fetchComposePlan,
 	telopStyleParams,
+	source,
 }: {
 	editor: EditorCore;
 	presetId: string;
 	targetSeconds: number;
 	planner?: Planner;
 	telopStyleParams?: Partial<ParamValues>;
+	source?: SourceVideo;
 }): Promise<GenerateResult> {
 	const prepared = await prepareShort({
 		editor,
 		presetId,
 		targetSeconds,
 		planner,
+		source,
 	});
 	if (!prepared.ok) {
 		return prepared;

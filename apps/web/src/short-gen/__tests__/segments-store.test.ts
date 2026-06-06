@@ -40,3 +40,30 @@ describe("transcript segments store", () => {
 		expect(useTranscriptSegments.getState().sourceMediaId).toBeNull();
 	});
 });
+
+describe("transcript cache (per video)", () => {
+	test("caches by sourceMediaId; loadCached restores it after switching away", () => {
+		useTranscriptSegments.getState().setSegments({
+			segments: [{ text: "cached-one", start: 0, end: 1 }],
+			sourceMediaId: "vid-cache-1",
+		});
+		// Switch the current selection to another video.
+		useTranscriptSegments.getState().setSegments({
+			segments: [{ text: "other", start: 0, end: 1 }],
+			sourceMediaId: "vid-cache-2",
+		});
+		// The first video's transcript is still recoverable from cache.
+		const hit = useTranscriptSegments.getState().loadCached({
+			mediaId: "vid-cache-1",
+		});
+		expect(hit).toBe(true);
+		expect(useTranscriptSegments.getState().segments[0].text).toBe("cached-one");
+		expect(useTranscriptSegments.getState().sourceMediaId).toBe("vid-cache-1");
+	});
+
+	test("loadCached returns false for a video never transcribed", () => {
+		expect(
+			useTranscriptSegments.getState().loadCached({ mediaId: "never-seen" }),
+		).toBe(false);
+	});
+});

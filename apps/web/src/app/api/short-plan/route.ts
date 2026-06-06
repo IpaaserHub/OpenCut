@@ -84,11 +84,17 @@ export async function POST(request: NextRequest) {
 		);
 	}
 
-	// Drop clips whose segmentIndex isn't one of the provided segments, then
+	// Drop clips whose segmentIndex isn't one of the provided segments, or that
+	// reuse a segment already taken by another short in the batch (exclude). Then
 	// renumber `order` 0..n so the surviving clips stay contiguous.
 	const validIndexes = new Set(parsed.data.segments.map((s) => s.index));
+	const excludedIndexes = new Set(parsed.data.excludeSegments ?? []);
 	const keptClips = planParsed.data.clips
-		.filter((clip) => validIndexes.has(clip.segmentIndex))
+		.filter(
+			(clip) =>
+				validIndexes.has(clip.segmentIndex) &&
+				!excludedIndexes.has(clip.segmentIndex),
+		)
 		.map((clip, order) => ({ ...clip, order }));
 
 	if (keptClips.length === 0) {

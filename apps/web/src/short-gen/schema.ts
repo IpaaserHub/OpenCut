@@ -27,5 +27,8 @@ export const composeRequestSchema = z.object({
 			}),
 		)
 		.min(1),
+	// Segment indexes already used by other shorts in the same batch. The plan
+	// must not reuse them, so the N shorts stay distinct (量産).
+	excludeSegments: z.array(z.number().int().min(0)).optional(),
 });
 export type ComposeRequest = z.infer<typeof composeRequestSchema>;

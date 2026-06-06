@@ -58,7 +58,13 @@ export function buildShortPlanPrompt({
 		"・ラスト3秒にCTAを入れる。",
 	].join("\n");
 
-	const segmentLines = request.segments
+	// Hide segments already used by other shorts in the batch so each short is
+	// built from fresh content. Indexes stay the original transcript indexes.
+	const excluded = new Set(request.excludeSegments ?? []);
+	const availableSegments = request.segments.filter(
+		(segment) => !excluded.has(segment.index),
+	);
+	const segmentLines = availableSegments
 		.map(
 			(segment) =>
 				`[${segment.index}] (${segment.start}s-${segment.end}s) ${segment.text}`,
@@ -67,10 +73,15 @@ export function buildShortPlanPrompt({
 
 	const user = [
 		`目標尺: ${request.targetSeconds}秒`,
+		excluded.size > 0
+			? "※ 下記は未使用セグメントのみ。この中から選び、他で使った内容と重複させないこと。"
+			: "",
 		"",
 		"文字起こしセグメント一覧:",
 		segmentLines,
-	].join("\n");
+	]
+		.filter(Boolean)
+		.join("\n");
 
 	return { system, user };
 }

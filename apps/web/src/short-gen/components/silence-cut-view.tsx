@@ -451,7 +451,7 @@ export function SilenceCutView() {
 							<div className="border-border flex flex-col gap-4 rounded-md border border-dashed p-3">
 								<div className="flex flex-col gap-1">
 									<span className="text-muted-foreground flex justify-between text-xs">
-										<span>カットの強さ（無音の判定・小さいほど控えめ）</span>
+										<span>無音とみなす音量のライン</span>
 										<span className="tabular-nums">{thresholdDb} dB</span>
 									</span>
 									<input
@@ -459,7 +459,7 @@ export function SilenceCutView() {
 										min={-60}
 										max={-20}
 										step={1}
-										aria-label="カットの強さ（無音の判定）"
+										aria-label="無音とみなす音量のライン"
 										value={thresholdDb}
 										disabled={busy}
 										onChange={(e) => {
@@ -468,6 +468,7 @@ export function SilenceCutView() {
 										}}
 										className="w-full"
 									/>
+									<span className="text-muted-foreground text-[10px] leading-tight">← ここまで静かなら切る（控えめ）／少しの音でも切る（積極的）→</span>
 								</div>
 
 								<div className="flex flex-col gap-1">

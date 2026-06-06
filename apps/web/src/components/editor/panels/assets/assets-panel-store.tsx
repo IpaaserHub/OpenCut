@@ -42,31 +42,31 @@ const createHugeiconsIcon =
 export const tabs = {
 	media: {
 		icon: createHugeiconsIcon({ icon: Folder03Icon }),
-		label: "Media",
+		label: "メディア",
 	},
 	sounds: {
 		icon: createHugeiconsIcon({ icon: HeadphonesIcon }),
-		label: "Sounds",
+		label: "音源",
 	},
 	text: {
 		icon: createHugeiconsIcon({ icon: TextIcon }),
-		label: "Text",
+		label: "テキスト",
 	},
 	stickers: {
 		icon: createHugeiconsIcon({ icon: Happy01Icon }),
-		label: "Stickers",
+		label: "ステッカー",
 	},
 	effects: {
 		icon: createHugeiconsIcon({ icon: MagicWand05Icon }),
-		label: "Effects",
+		label: "エフェクト",
 	},
 	transitions: {
 		icon: createHugeiconsIcon({ icon: ArrowRightDoubleIcon }),
-		label: "Transitions",
+		label: "トランジション",
 	},
 	captions: {
 		icon: createHugeiconsIcon({ icon: ClosedCaptionIcon }),
-		label: "Captions",
+		label: "字幕",
 	},
 	aiShort: {
 		icon: createHugeiconsIcon({ icon: AiVideoIcon }),
@@ -78,11 +78,11 @@ export const tabs = {
 	},
 	adjustment: {
 		icon: createHugeiconsIcon({ icon: SlidersHorizontalIcon }),
-		label: "Adjustment",
+		label: "調整",
 	},
 	settings: {
 		icon: createHugeiconsIcon({ icon: Settings01Icon }),
-		label: "Settings",
+		label: "設定",
 	},
 } satisfies Record<
 	Tab,
@@ -96,6 +96,8 @@ export type MediaSortOrder = "asc" | "desc";
 interface AssetsPanelStore {
 	activeTab: Tab;
 	setActiveTab: (tab: Tab) => void;
+	tabBarExpanded: boolean;
+	toggleTabBar: () => void;
 	highlightMediaId: string | null;
 	requestRevealMedia: (mediaId: string) => void;
 	clearHighlight: () => void;
@@ -113,6 +115,9 @@ export const useAssetsPanelStore = create<AssetsPanelStore>()(
 		(set) => ({
 			activeTab: "media",
 			setActiveTab: (tab) => set({ activeTab: tab }),
+			tabBarExpanded: false,
+			toggleTabBar: () =>
+				set((s) => ({ tabBarExpanded: !s.tabBarExpanded })),
 			highlightMediaId: null,
 			requestRevealMedia: (mediaId) =>
 				set({ activeTab: "media", highlightMediaId: mediaId }),
@@ -127,6 +132,7 @@ export const useAssetsPanelStore = create<AssetsPanelStore>()(
 		{
 			name: "assets-panel",
 			partialize: (state) => ({
+				tabBarExpanded: state.tabBarExpanded,
 				mediaViewMode: state.mediaViewMode,
 				mediaSortBy: state.mediaSortBy,
 				mediaSortOrder: state.mediaSortOrder,

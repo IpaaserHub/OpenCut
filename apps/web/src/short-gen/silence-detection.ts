@@ -165,14 +165,50 @@ export function detectSilences({
 		return { silences: [], keep: [], totalSec: Math.max(0, totalSec) };
 	}
 
-	const frameLen = Math.max(1, Math.round(sampleRate * opts.frameSec));
-	const thresholdLinear = dbToLinear(opts.thresholdDb);
-
 	const rms = computeFrameRms({
 		samples,
 		sampleRate,
 		frameSec: opts.frameSec,
 	});
+
+	return detectSilencesFromFrames({
+		rms,
+		frameSec: opts.frameSec,
+		sampleRate,
+		totalSec,
+		options: opts,
+	});
+}
+
+/**
+ * The cheap half of `detectSilences`: threshold + merge + pad + invert, on an
+ * already-computed per-frame RMS array. Split out so the UI can compute the
+ * (expensive) frame RMS ONCE per source and re-run only this as the user drags
+ * the threshold / min-silence / padding sliders — keeping the preview snappy
+ * ("Vrew feel") even on long videos. `frameSec` must match the value used to
+ * build `rms`.
+ */
+export function detectSilencesFromFrames({
+	rms,
+	frameSec,
+	sampleRate,
+	totalSec,
+	options,
+}: {
+	rms: Float32Array;
+	frameSec: number;
+	sampleRate: number;
+	totalSec: number;
+	options?: SilenceDetectionOptions;
+}): SilenceDetectionResult {
+	const opts = { ...DEFAULT_SILENCE_OPTIONS, ...options };
+
+	if (rms.length === 0 || sampleRate <= 0 || totalSec <= 0) {
+		return { silences: [], keep: [], totalSec: Math.max(0, totalSec) };
+	}
+
+	const frameLen = Math.max(1, Math.round(sampleRate * frameSec));
+	const thresholdLinear = dbToLinear(opts.thresholdDb);
 
 	const runs = rawSilenceRuns({
 		rms,

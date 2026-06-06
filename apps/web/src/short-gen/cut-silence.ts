@@ -77,8 +77,21 @@ export async function applySilenceCut({
 	keep: Interval[];
 	sceneName?: string;
 }): Promise<{ ok: true; sceneId: string } | { ok: false; reason: string }> {
+	// Decoded audio can run a hair longer than the video track; clamp keep ranges
+	// to the asset's real duration so the last clip never references past the
+	// video tail (which would show a frozen/black frame).
+	const clamped =
+		descriptor.durationSec > 0
+			? keep
+					.map((iv) => ({
+						startSec: Math.min(iv.startSec, descriptor.durationSec),
+						endSec: Math.min(iv.endSec, descriptor.durationSec),
+					}))
+					.filter((iv) => iv.endSec > iv.startSec)
+			: keep;
+
 	const specs: ShortSpecs = {
-		clips: keepIntervalsToClipSpecs({ keep }),
+		clips: keepIntervalsToClipSpecs({ keep: clamped }),
 		texts: [],
 	};
 	if (specs.clips.length === 0) {

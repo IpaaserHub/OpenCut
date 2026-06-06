@@ -1,6 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
+	computeFrameRms,
 	detectSilences,
+	detectSilencesFromFrames,
 	keepIntervalsToClipSpecs,
 	summarizeSilenceCut,
 	type Interval,
@@ -205,6 +207,55 @@ describe("detectSilences", () => {
 		expect(result.totalSec).toBe(0);
 		expect(result.silences).toEqual([]);
 		expect(result.keep).toEqual([]);
+	});
+});
+
+describe("detectSilencesFromFrames", () => {
+	test("matches detectSilences when fed the same frame RMS (cheap re-detect path)", () => {
+		const sampleRate = 1000;
+		const frameSec = 0.01;
+		const options = {
+			thresholdDb: -40,
+			minSilenceSec: 0.5,
+			paddingSec: 0.1,
+			minKeepSec: 0,
+			frameSec,
+		};
+		const samples = makeSamples({
+			sampleRate,
+			segments: [
+				{ amp: 0.5, durSec: 1 },
+				{ amp: 0, durSec: 2 },
+				{ amp: 0.5, durSec: 1 },
+			],
+		});
+
+		const full = detectSilences({ samples, sampleRate, options });
+
+		// The UI path: compute frame RMS once, then re-detect from frames.
+		const rms = computeFrameRms({ samples, sampleRate, frameSec });
+		const fromFrames = detectSilencesFromFrames({
+			rms,
+			frameSec,
+			sampleRate,
+			totalSec: samples.length / sampleRate,
+			options,
+		});
+
+		expect(r4(fromFrames.silences)).toEqual(r4(full.silences));
+		expect(r4(fromFrames.keep)).toEqual(r4(full.keep));
+		expect(fromFrames.totalSec).toBeCloseTo(full.totalSec, 5);
+	});
+
+	test("empty frames yield no silences and no keep intervals", () => {
+		expect(
+			detectSilencesFromFrames({
+				rms: new Float32Array(0),
+				frameSec: 0.02,
+				sampleRate: 1000,
+				totalSec: 0,
+			}),
+		).toEqual({ silences: [], keep: [], totalSec: 0 });
 	});
 });
 

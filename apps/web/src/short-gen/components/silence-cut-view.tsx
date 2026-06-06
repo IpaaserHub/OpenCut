@@ -22,8 +22,9 @@ import {
 	type SilenceSource,
 } from "@/short-gen/cut-silence";
 import {
+	computeFrameRms,
 	DEFAULT_SILENCE_OPTIONS,
-	detectSilences,
+	detectSilencesFromFrames,
 	summarizeSilenceCut,
 } from "@/short-gen/silence-detection";
 import { cn } from "@/utils/ui";
@@ -75,11 +76,25 @@ export function SilenceCutView() {
 
 	// Re-detect instantly whenever a tuning knob moves — the decode (the only
 	// expensive step) already happened, so this runs over cached PCM in memory.
-	const detection = useMemo(() => {
+	// The expensive RMS pass depends ONLY on the decoded samples (frameSec is
+	// fixed), so compute it once per source. Dragging a slider then re-runs only
+	// the cheap threshold/merge step below — keeping the preview responsive.
+	const frames = useMemo(() => {
 		if (!source) return null;
-		const result = detectSilences({
+		return computeFrameRms({
 			samples: source.samples,
 			sampleRate: source.sampleRate,
+			frameSec: DEFAULT_SILENCE_OPTIONS.frameSec,
+		});
+	}, [source]);
+
+	const detection = useMemo(() => {
+		if (!source || !frames) return null;
+		const result = detectSilencesFromFrames({
+			rms: frames,
+			frameSec: DEFAULT_SILENCE_OPTIONS.frameSec,
+			sampleRate: source.sampleRate,
+			totalSec: source.samples.length / source.sampleRate,
 			options: { thresholdDb, minSilenceSec, paddingSec },
 		});
 		const summary = summarizeSilenceCut({
@@ -87,7 +102,7 @@ export function SilenceCutView() {
 			totalSec: result.totalSec,
 		});
 		return { result, summary };
-	}, [source, thresholdDb, minSilenceSec, paddingSec]);
+	}, [source, frames, thresholdDb, minSilenceSec, paddingSec]);
 
 	// Tile [0, total] with keep (kept speech) and cut (removed silence) blocks,
 	// in time order, for the before/after bar.

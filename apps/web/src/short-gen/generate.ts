@@ -9,16 +9,26 @@ import { useShortMeta } from "@/short-gen/short-meta-store";
 import { specsToElements } from "@/short-gen/specs-to-elements";
 import { findSourceVideo } from "@/short-gen/source-video";
 import { capSegmentsForPrompt } from "@/short-gen/truncate";
+import {
+	type CompositionOrder,
+	mergeExcludes,
+	orderToSequence,
+	usedSegmentIndexes,
+} from "@/short-gen/batch";
 
 /**
  * A planner turns the (capped, indexed) transcript segments into a
  * `ComposePlan`. The mock is the default; Task 7 injects the real AI fetch via
  * this seam without touching the rest of `generateShort`.
+ *
+ * `excludeSegments` lists indexes already used by other shorts in the same
+ * batch, so each short is built from fresh content (量産).
  */
 export type Planner = (input: {
 	segments: SegmentInput[];
 	targetSeconds: number;
 	presetId: string;
+	excludeSegments?: number[];
 }) => ComposePlan | Promise<ComposePlan>;
 
 const planResponseSchema = z.object({ plan: composePlanSchema });
@@ -33,15 +43,17 @@ async function fetchComposePlan({
 	segments,
 	targetSeconds,
 	presetId,
+	excludeSegments,
 }: {
 	segments: SegmentInput[];
 	targetSeconds: number;
 	presetId: string;
+	excludeSegments?: number[];
 }): Promise<ComposePlan> {
 	const res = await fetch("/api/short-plan", {
 		method: "POST",
 		headers: { "content-type": "application/json" },
-		body: JSON.stringify({ presetId, targetSeconds, segments }),
+		body: JSON.stringify({ presetId, targetSeconds, segments, excludeSegments }),
 	});
 	if (!res.ok) {
 		const errorBody = errorSchema.safeParse(await res.json().catch(() => null));
@@ -98,12 +110,14 @@ export async function prepareShort({
 	targetSeconds,
 	planner = fetchComposePlan,
 	source: explicitSource,
+	excludeSegments,
 }: {
 	editor: EditorCore;
 	presetId: string;
 	targetSeconds: number;
 	planner?: Planner;
 	source?: SourceVideo;
+	excludeSegments?: number[];
 }): Promise<PrepareResult> {
 	const storeSegments = useTranscriptSegments.getState().segments;
 	if (storeSegments.length === 0) {
@@ -139,6 +153,7 @@ export async function prepareShort({
 			segments: cappedSegments,
 			targetSeconds,
 			presetId,
+			excludeSegments,
 		});
 	} catch (error) {
 		// A fetch/HTTP error from the real planner becomes a structured failure
@@ -180,12 +195,14 @@ export async function applyReviewedPlan({
 	segments,
 	source,
 	telopStyleParams,
+	sceneName,
 }: {
 	editor: EditorCore;
 	plan: ComposePlan;
 	segments: SegmentInput[];
 	source: SourceVideo;
 	telopStyleParams?: Partial<ParamValues>;
+	sceneName?: string;
 }): Promise<ApplyResult> {
 	const specs = planToClipSpecs({ plan, segments });
 	const { videoElements, textElements, ctaTextElement } = specsToElements({
@@ -201,7 +218,7 @@ export async function applyReviewedPlan({
 	let sceneId: string;
 	try {
 		sceneId = await editor.scenes.createScene({
-			name: "AIショート",
+			name: sceneName ?? "AIショート",
 			isMain: false,
 		});
 		await editor.scenes.switchToScene({ sceneId });
@@ -275,4 +292,131 @@ export async function generateShort({
 		droppedCount: prepared.droppedCount,
 		sceneId: applied.sceneId,
 	};
+}
+
+// ---------------------------------------------------------------------------
+// Multi-short batch (量産): prepare N distinct shorts, then apply them.
+// ---------------------------------------------------------------------------
+
+export type PreparedShort =
+	| {
+			ok: true;
+			presetId: string;
+			plan: ComposePlan;
+			segments: SegmentInput[];
+			source: SourceVideo;
+			droppedCount: number;
+	  }
+	| { ok: false; presetId: string; reason: string };
+
+/**
+ * Prepare N shorts from ONE source per the composition order, WITHOUT applying
+ * anything (no scene switches — the source is captured up front and passed in).
+ * Each short excludes the segments earlier shorts already used, so the batch
+ * stays distinct. Per-short failures are captured so one bad plan doesn't abort
+ * the whole batch.
+ */
+export async function prepareShorts({
+	editor,
+	source,
+	order,
+	targetSeconds,
+	planner = fetchComposePlan,
+}: {
+	editor: EditorCore;
+	source: SourceVideo;
+	order: CompositionOrder;
+	targetSeconds: number;
+	planner?: Planner;
+}): Promise<PreparedShort[]> {
+	const sequence = orderToSequence({ order });
+	const results: PreparedShort[] = [];
+	let excludeSegments: number[] = [];
+
+	for (const presetId of sequence) {
+		const prepared = await prepareShort({
+			editor,
+			presetId,
+			targetSeconds,
+			planner,
+			source,
+			excludeSegments,
+		});
+		if (prepared.ok) {
+			results.push({
+				ok: true,
+				presetId,
+				plan: prepared.plan,
+				segments: prepared.segments,
+				source: prepared.source,
+				droppedCount: prepared.droppedCount,
+			});
+			excludeSegments = mergeExcludes({
+				excludes: excludeSegments,
+				used: usedSegmentIndexes({ clips: prepared.plan.clips }),
+			});
+		} else {
+			results.push({ ok: false, presetId, reason: prepared.reason });
+		}
+	}
+
+	return results;
+}
+
+export type AppliedShort =
+	| { ok: true; presetId: string; sceneId: string }
+	| { ok: false; presetId: string; reason: string };
+
+/**
+ * Apply already-prepared shorts, each into its own dedicated "AIショート N"
+ * scene. Returns per-short results and lands the user on the first created
+ * scene. Source capture already happened in `prepareShorts`, so switching
+ * scenes here is safe.
+ */
+export async function applyShorts({
+	editor,
+	prepared,
+	telopStyleParams,
+}: {
+	editor: EditorCore;
+	prepared: PreparedShort[];
+	telopStyleParams?: Partial<ParamValues>;
+}): Promise<AppliedShort[]> {
+	const applied: AppliedShort[] = [];
+	let created = 0;
+
+	for (const short of prepared) {
+		if (!short.ok) {
+			applied.push({ ok: false, presetId: short.presetId, reason: short.reason });
+			continue;
+		}
+		created += 1;
+		const result = await applyReviewedPlan({
+			editor,
+			plan: short.plan,
+			segments: short.segments,
+			source: short.source,
+			telopStyleParams,
+			sceneName: `AIショート ${created}`,
+		});
+		applied.push(
+			result.ok
+				? { ok: true, presetId: short.presetId, sceneId: result.sceneId }
+				: { ok: false, presetId: short.presetId, reason: result.reason },
+		);
+	}
+
+	// Land the user on the first successfully-created short.
+	const firstCreated = applied.find(
+		(a): a is { ok: true; presetId: string; sceneId: string } => a.ok,
+	);
+	if (firstCreated) {
+		try {
+			await editor.scenes.switchToScene({ sceneId: firstCreated.sceneId });
+		} catch {
+			// Non-fatal: the scenes exist even if the final switch fails.
+		}
+	}
+
+	return applied;
 }

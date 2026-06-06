@@ -44,6 +44,40 @@ type Status =
 	| { kind: "success"; message: string }
 	| { kind: "error"; message: string };
 
+/**
+ * Plain-language strength presets. Each bundles the three raw knobs so the
+ * everyday user picks an INTENT ("控えめ / おすすめ / しっかり") instead of a dB
+ * value. The raw sliders still live behind "詳細設定" for fine control.
+ */
+const STRENGTH_PRESETS = [
+	{
+		id: "gentle",
+		label: "控えめ",
+		hint: "はっきりした無音だけ",
+		thresholdDb: -50,
+		minSilenceSec: 0.8,
+		paddingSec: 0.15,
+	},
+	{
+		id: "recommended",
+		label: "おすすめ",
+		hint: "バランス標準",
+		thresholdDb: -40,
+		minSilenceSec: 0.6,
+		paddingSec: 0.1,
+	},
+	{
+		id: "strong",
+		label: "しっかり",
+		hint: "テンポ優先で詰める",
+		thresholdDb: -30,
+		minSilenceSec: 0.4,
+		paddingSec: 0.08,
+	},
+] as const;
+
+type StrengthId = (typeof STRENGTH_PRESETS)[number]["id"] | "custom";
+
 export function SilenceCutView() {
 	const editor = useEditor();
 	const videoAssets = useEditor((e) =>
@@ -69,6 +103,10 @@ export function SilenceCutView() {
 	const [paddingSec, setPaddingSec] = useState(
 		DEFAULT_SILENCE_OPTIONS.paddingSec,
 	);
+	// Which strength preset is active ("custom" once a raw slider is touched).
+	// Defaults align with "おすすめ" (= DEFAULT_SILENCE_OPTIONS).
+	const [strength, setStrength] = useState<StrengthId>("recommended");
+	const [detailOpen, setDetailOpen] = useState(false);
 
 	const selectedAsset =
 		videoAssets.find((asset) => asset.id === selectedSourceId) ?? null;
@@ -127,6 +165,14 @@ export function SilenceCutView() {
 		setSource(null);
 		setAppliedDone(false);
 		setStatus({ kind: "idle" });
+	};
+
+	// Apply a one-tap strength preset (sets all three raw knobs at once).
+	const applyStrength = (preset: (typeof STRENGTH_PRESETS)[number]) => {
+		setThresholdDb(preset.thresholdDb);
+		setMinSilenceSec(preset.minSilenceSec);
+		setPaddingSec(preset.paddingSec);
+		setStrength(preset.id);
 	};
 
 	const handleAnalyze = async () => {
@@ -322,21 +368,148 @@ export function SilenceCutView() {
 			{/* ③ 調整 + プレビュー */}
 			{source && detection && (
 				<>
-					{/* 仕上がりサマリー */}
-					<div className="border-border bg-card flex flex-col gap-2 rounded-md border p-3">
-						<div className="flex items-baseline justify-between">
-							<span className="text-muted-foreground text-sm">仕上がり</span>
+					{/* 仕上がり（数値だけ） */}
+					<div className="border-border bg-card flex items-baseline justify-between rounded-md border p-3">
+						<span className="text-muted-foreground text-sm">仕上がり</span>
+						<div className="text-right">
 							<span className="text-sm font-semibold tabular-nums">
 								{formatDuration({ seconds: detection.summary.originalSec })}
 								<span className="text-muted-foreground mx-1">→</span>
 								{formatDuration({ seconds: detection.summary.resultSec })}
 							</span>
+							<p className="text-muted-foreground text-xs">
+								{detection.summary.removedCount}箇所・約
+								{Math.round(detection.summary.removedSec)}秒カット
+							</p>
 						</div>
-						<p className="text-muted-foreground text-xs">
-							{detection.summary.removedCount}箇所・約
-							{Math.round(detection.summary.removedSec)}秒の無音をカット
-						</p>
-						{/* before/after バー */}
+					</div>
+
+					{/* カットの強さ：ボタン1タップ */}
+					<div className="flex flex-col gap-2">
+						<span className="text-muted-foreground flex items-center gap-2 text-sm">
+							カットの強さ
+							{strength === "custom" && (
+								<span className="bg-accent text-muted-foreground rounded px-1.5 py-0.5 text-[10px]">
+									カスタム
+								</span>
+							)}
+						</span>
+						<div className="grid grid-cols-3 gap-2">
+							{STRENGTH_PRESETS.map((preset) => {
+								const isActive = strength === preset.id;
+								return (
+									<button
+										key={preset.id}
+										type="button"
+										disabled={busy}
+										onClick={() => applyStrength(preset)}
+										className={cn(
+											"flex flex-col items-center gap-0.5 rounded-md border px-2 py-2 text-center transition-colors disabled:opacity-50",
+											isActive
+												? "border-primary bg-primary/10 ring-primary ring-2"
+												: "border-border bg-accent hover:border-primary/50",
+										)}
+									>
+										<span className="text-sm font-semibold">{preset.label}</span>
+										<span className="text-muted-foreground text-[10px] leading-tight">
+											{preset.hint}
+										</span>
+									</button>
+								);
+							})}
+						</div>
+					</div>
+
+					{/* 詳細設定▷（細かいスライダー） */}
+					<div className="flex flex-col gap-3">
+						<button
+							type="button"
+							onClick={() => setDetailOpen((open) => !open)}
+							className="text-muted-foreground hover:text-foreground flex items-center gap-1 text-xs"
+						>
+							<ChevronDown
+								className={cn(
+									"size-3.5 transition-transform",
+									detailOpen ? "" : "-rotate-90",
+								)}
+							/>
+							詳細設定（自分で微調整）
+						</button>
+
+						{detailOpen && (
+							<div className="border-border flex flex-col gap-4 rounded-md border border-dashed p-3">
+								<div className="flex flex-col gap-1">
+									<span className="text-muted-foreground flex justify-between text-xs">
+										<span>カットの強さ（無音の判定・小さいほど控えめ）</span>
+										<span className="tabular-nums">{thresholdDb} dB</span>
+									</span>
+									<input
+										type="range"
+										min={-60}
+										max={-20}
+										step={1}
+										aria-label="カットの強さ（無音の判定）"
+										value={thresholdDb}
+										disabled={busy}
+										onChange={(e) => {
+											setThresholdDb(Number(e.target.value));
+											setStrength("custom");
+										}}
+										className="w-full"
+									/>
+								</div>
+
+								<div className="flex flex-col gap-1">
+									<span className="text-muted-foreground flex justify-between text-xs">
+										<span>これより短い「間」は残す</span>
+										<span className="tabular-nums">
+											{minSilenceSec.toFixed(1)} 秒
+										</span>
+									</span>
+									<input
+										type="range"
+										min={0.2}
+										max={2}
+										step={0.1}
+										aria-label="これより短い間は残す（秒）"
+										value={minSilenceSec}
+										disabled={busy}
+										onChange={(e) => {
+											setMinSilenceSec(Number(e.target.value));
+											setStrength("custom");
+										}}
+										className="w-full"
+									/>
+								</div>
+
+								<div className="flex flex-col gap-1">
+									<span className="text-muted-foreground flex justify-between text-xs">
+										<span>カット前後に残す余白（増やすとしゃべりが切れにくい）</span>
+										<span className="tabular-nums">
+											{paddingSec.toFixed(2)} 秒
+										</span>
+									</span>
+									<input
+										type="range"
+										min={0}
+										max={0.4}
+										step={0.05}
+										aria-label="カット前後に残す余白（秒）"
+										value={paddingSec}
+										disabled={busy}
+										onChange={(e) => {
+											setPaddingSec(Number(e.target.value));
+											setStrength("custom");
+										}}
+										className="w-full"
+									/>
+								</div>
+							</div>
+						)}
+					</div>
+
+					{/* 今のバー（残す＝青／カット＝赤） */}
+					<div className="flex flex-col gap-1.5">
 						<div className="bg-muted flex h-3 w-full overflow-hidden rounded">
 							{timelineBlocks.map((block, i) => (
 								<div
@@ -358,70 +531,6 @@ export function SilenceCutView() {
 								<span className="bg-destructive/40 inline-block size-2 rounded-sm" />
 								カット
 							</span>
-						</div>
-					</div>
-
-					{/* チューニング */}
-					<div className="flex flex-col gap-4">
-						<div className="flex flex-col gap-1">
-							<span className="text-muted-foreground flex justify-between text-xs">
-								<span>カットの強さ（無音の判定）</span>
-								<span className="tabular-nums">{thresholdDb} dB</span>
-							</span>
-							<input
-								type="range"
-								min={-60}
-								max={-20}
-								step={1}
-								aria-label="カットの強さ（無音の判定）"
-								value={thresholdDb}
-								disabled={busy}
-								onChange={(e) => setThresholdDb(Number(e.target.value))}
-								className="w-full"
-							/>
-							<span className="text-muted-foreground text-[10px]">
-								左：控えめ（はっきりした無音だけ） ／ 右：積極的（小さな音もカット）
-							</span>
-						</div>
-
-						<div className="flex flex-col gap-1">
-							<span className="text-muted-foreground flex justify-between text-xs">
-								<span>これより短い「間」は残す</span>
-								<span className="tabular-nums">
-									{minSilenceSec.toFixed(1)} 秒
-								</span>
-							</span>
-							<input
-								type="range"
-								min={0.2}
-								max={2}
-								step={0.1}
-								aria-label="これより短い間は残す（秒）"
-								value={minSilenceSec}
-								disabled={busy}
-								onChange={(e) => setMinSilenceSec(Number(e.target.value))}
-								className="w-full"
-							/>
-						</div>
-
-						<div className="flex flex-col gap-1">
-							<span className="text-muted-foreground flex justify-between text-xs">
-								<span>カット前後に残す余白</span>
-								<span className="tabular-nums">
-									{paddingSec.toFixed(2)} 秒
-								</span>
-							</span>
-							<input
-								type="range"
-								min={0}
-								max={0.4}
-								step={0.05}
-								aria-label="カット前後に残す余白（秒）"
-								value={paddingSec}
-								disabled={busy}
-								onChange={(e) => setPaddingSec(Number(e.target.value))}
-								className="w-full"
-							/>
 						</div>
 					</div>
 

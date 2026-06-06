@@ -17,6 +17,11 @@ import { PRESETS } from "@/short-gen/presets";
 import { useTranscriptSegments } from "@/short-gen/segments-store";
 import { sourceVideoFromAsset } from "@/short-gen/source-video";
 import { useTextTemplates } from "@/text/templates-store";
+import {
+	BUILT_IN_TEXT_TEMPLATES,
+	TextTemplatePreview,
+	buildTextParams,
+} from "@/text/components/assets-view";
 import { transcribeMediaAsset } from "@/transcription/run-transcription";
 import { TRANSCRIPTION_LANGUAGES } from "@/transcription/supported-languages";
 import type {
@@ -77,6 +82,7 @@ export function AiShortView() {
 
 	const [selectedSourceId, setSelectedSourceId] = useState<string | null>(null);
 	const [sourceOpen, setSourceOpen] = useState(false);
+	const [telopOpen, setTelopOpen] = useState(false);
 	const [language, setLanguage] = useState<TranscriptionLanguage>("ja");
 	// Composition order: how many shorts of each preset. Default = 1 of the first
 	// preset (an order summing to 1 is just the single-short case).
@@ -102,6 +108,9 @@ export function AiShortView() {
 		videoAssets.find((asset) => asset.id === selectedSourceId) ?? null;
 	const canTranscribe =
 		selectedAsset !== null && selectedAsset.hasAudio !== false;
+	// All shorts in a batch share the picked source, so its thumbnail is a real
+	// frame we can show in previews (per-clip-accurate frames would need rendering).
+	const sourceThumb = selectedAsset?.thumbnailUrl ?? null;
 	const compositionOrder: CompositionOrder = PRESETS.map((p) => ({
 		presetId: p.id,
 		count: order[p.id] ?? 0,
@@ -109,11 +118,13 @@ export function AiShortView() {
 	const total = totalCount({ order: compositionOrder });
 	const okShorts = prepared.filter((p) => p.ok).length;
 
+	// Built-in telop styles first, then the user's saved templates.
+	const telopStyles = [...BUILT_IN_TEXT_TEMPLATES, ...templates];
+	const selectedTelop = telopStyles.find((t) => t.id === selectedTemplateId);
 	const telopStyleParams =
 		selectedTemplateId === DEFAULT_TELOP_STYLE_ID
 			? undefined
-			: templates.find((template) => template.id === selectedTemplateId)
-					?.params;
+			: selectedTelop?.params;
 
 	const setPresetCount = ({
 		presetId,
@@ -576,30 +587,87 @@ export function AiShortView() {
 									</div>
 								</div>
 
-								{/* テロップスタイル */}
+								{/* テロップスタイル（プレビュー付きで選択） */}
 								<div className="flex flex-col gap-2">
 									<span className="text-muted-foreground text-sm">
 										テロップスタイル
 									</span>
-									<Select
-										value={selectedTemplateId}
-										onValueChange={setSelectedTemplateId}
-										disabled={isGenerating}
-									>
-										<SelectTrigger>
-											<SelectValue placeholder="スタイルを選択" />
-										</SelectTrigger>
-										<SelectContent className="z-[300]">
-											<SelectItem value={DEFAULT_TELOP_STYLE_ID}>
-												既定（スタイルなし）
-											</SelectItem>
-											{templates.map((template) => (
-												<SelectItem key={template.id} value={template.id}>
-													{template.name}
-												</SelectItem>
-											))}
-										</SelectContent>
-									</Select>
+									<Dialog open={telopOpen} onOpenChange={setTelopOpen}>
+										<DialogTrigger asChild>
+											<button
+												type="button"
+												disabled={isGenerating}
+												className="border-border bg-accent hover:border-primary/50 flex items-center gap-2 rounded-md border p-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-60"
+											>
+												<span className="flex-1 truncate text-sm">
+													{selectedTemplateId === DEFAULT_TELOP_STYLE_ID
+														? "既定（スタイルなし）"
+														: (selectedTelop?.name ?? "スタイルを選択")}
+												</span>
+												<ChevronDown className="text-muted-foreground size-4 shrink-0" />
+											</button>
+										</DialogTrigger>
+										<DialogContent className="z-[300] max-w-lg">
+											<DialogHeader>
+												<DialogTitle>テロップスタイルを選択</DialogTitle>
+												<DialogDescription>
+													見た目を確認して選べます。
+												</DialogDescription>
+											</DialogHeader>
+											<DialogBody className="max-h-[60vh] overflow-y-auto">
+												<div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+													<button
+														type="button"
+														onClick={() => {
+															setSelectedTemplateId(DEFAULT_TELOP_STYLE_ID);
+															setTelopOpen(false);
+														}}
+														className={cn(
+															"flex flex-col gap-1.5 rounded-lg border p-2 text-left transition-colors",
+															selectedTemplateId === DEFAULT_TELOP_STYLE_ID
+																? "border-primary bg-primary/10 ring-primary ring-2"
+																: "border-border bg-accent hover:border-primary/50",
+														)}
+													>
+														<div className="bg-muted text-muted-foreground/60 flex aspect-video w-full items-center justify-center rounded text-xs">
+															なし
+														</div>
+														<span className="truncate text-xs font-medium">
+															既定（スタイルなし）
+														</span>
+													</button>
+													{telopStyles.map((style) => {
+														const isSelected = style.id === selectedTemplateId;
+														return (
+															<button
+																key={style.id}
+																type="button"
+																onClick={() => {
+																	setSelectedTemplateId(style.id);
+																	setTelopOpen(false);
+																}}
+																className={cn(
+																	"flex flex-col gap-1.5 rounded-lg border p-2 text-left transition-colors",
+																	isSelected
+																		? "border-primary bg-primary/10 ring-primary ring-2"
+																		: "border-border bg-accent hover:border-primary/50",
+																)}
+															>
+																<div className="aspect-video w-full overflow-hidden rounded">
+																	<TextTemplatePreview
+																		params={buildTextParams({ params: style.params })}
+																	/>
+																</div>
+																<span className="truncate text-xs font-medium">
+																	{style.name}
+																</span>
+															</button>
+														);
+													})}
+												</div>
+											</DialogBody>
+										</DialogContent>
+									</Dialog>
 								</div>
 
 								<Button
@@ -743,7 +811,17 @@ export function AiShortView() {
 														key={clip.order}
 														className="bg-muted relative flex aspect-video items-end overflow-hidden rounded"
 													>
-														<span className="w-full bg-black/55 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-white">
+														{sourceThumb ? (
+															<Image
+																src={sourceThumb}
+																alt=""
+																fill
+																sizes="180px"
+																className="object-cover"
+																unoptimized
+															/>
+														) : null}
+														<span className="relative w-full bg-black/55 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-white">
 															{clip.caption}
 														</span>
 													</div>
@@ -811,12 +889,23 @@ export function AiShortView() {
 												onClick={() => setDetailIndex(index)}
 												className="border-border hover:border-primary/60 flex flex-col overflow-hidden rounded-lg border text-left transition-colors"
 											>
-												<div className="bg-muted relative flex aspect-video items-center justify-center">
+												<div className="bg-muted relative flex aspect-video items-center justify-center overflow-hidden">
+													{sourceThumb ? (
+														<Image
+															src={sourceThumb}
+															alt=""
+															fill
+															sizes="(max-width: 640px) 100vw, 320px"
+															className="object-cover"
+															unoptimized
+														/>
+													) : (
+														<span className="text-muted-foreground/60 text-xs">
+															▶ プレビュー
+														</span>
+													)}
 													<span className="bg-primary/90 absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-medium text-white">
 														{presetLabel(short.presetId)}
-													</span>
-													<span className="text-muted-foreground/60 text-xs">
-														▶ プレビュー
 													</span>
 													<span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
 														できあがり {Math.round(short.plan.estimatedSeconds)}秒

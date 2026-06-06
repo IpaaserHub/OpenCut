@@ -95,7 +95,7 @@ export function AiShortView() {
 	const [dialogOpen, setDialogOpen] = useState(false);
 	const [phase, setPhase] = useState<"config" | "results">("config");
 	const [prepared, setPrepared] = useState<PreparedShort[]>([]);
-	const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+	const [detailIndex, setDetailIndex] = useState<number | null>(null);
 	const [appliedDone, setAppliedDone] = useState(false);
 
 	const selectedAsset =
@@ -152,7 +152,7 @@ export function AiShortView() {
 			// Reset the in-dialog flow so the next 作成 starts clean (keep settings).
 			setPhase("config");
 			setPrepared([]);
-			setExpandedIndex(null);
+			setDetailIndex(null);
 			setAppliedDone(false);
 			setStatus({ kind: "idle" });
 		}
@@ -209,7 +209,7 @@ export function AiShortView() {
 			});
 
 			setPrepared(results);
-			setExpandedIndex(null);
+			setDetailIndex(null);
 			setAppliedDone(false);
 			setPhase("results");
 			const ok = results.filter((r) => r.ok).length;
@@ -252,6 +252,49 @@ export function AiShortView() {
 			setIsGenerating(false);
 		}
 	};
+
+	const detailShort = detailIndex !== null ? prepared[detailIndex] : null;
+
+	// Edit a specific short's clips (reorder / remove), renumbering `order`.
+	const editDetailClips = (
+		transform: (clips: { segmentIndex: number; order: number; caption: string }[]) => {
+			segmentIndex: number;
+			order: number;
+			caption: string;
+		}[],
+	) => {
+		if (detailIndex === null) return;
+		setPrepared((prev) =>
+			prev.map((short, i) => {
+				if (i !== detailIndex || !short.ok) return short;
+				const sorted = [...short.plan.clips].sort((a, b) => a.order - b.order);
+				const next = transform(sorted).map((clip, k) => ({ ...clip, order: k }));
+				return { ...short, plan: { ...short.plan, clips: next } };
+			}),
+		);
+	};
+	const removeClipAt = (pos: number) =>
+		editDetailClips((clips) =>
+			clips.length > 1 ? clips.filter((_, i) => i !== pos) : clips,
+		);
+	const moveClipAt = ({ pos, dir }: { pos: number; dir: -1 | 1 }) =>
+		editDetailClips((clips) => {
+			const target = pos + dir;
+			if (target < 0 || target >= clips.length) return clips;
+			const copy = [...clips];
+			const [moved] = copy.splice(pos, 1);
+			copy.splice(target, 0, moved);
+			return copy;
+		});
+
+	/** Look up a clip's source segment (for its timestamp/duration). */
+	const segmentForClip = ({
+		short,
+		segmentIndex,
+	}: {
+		short: Extract<PreparedShort, { ok: true }>;
+		segmentIndex: number;
+	}) => short.segments.find((s) => s.index === segmentIndex);
 
 	return (
 		<>
@@ -546,7 +589,7 @@ export function AiShortView() {
 										<SelectTrigger>
 											<SelectValue placeholder="スタイルを選択" />
 										</SelectTrigger>
-										<SelectContent>
+										<SelectContent className="z-[300]">
 											<SelectItem value={DEFAULT_TELOP_STYLE_ID}>
 												既定（スタイルなし）
 											</SelectItem>
@@ -575,7 +618,157 @@ export function AiShortView() {
 							</>
 						)}
 
-						{phase === "results" && (
+						{phase === "results" && detailShort?.ok && (
+							/* ---- 個別レビュー（B 構成 ＋ C 縦型プレビュー）---- */
+							<>
+								<div className="flex items-center gap-2">
+									<button
+										type="button"
+										disabled={isGenerating}
+										onClick={() => setDetailIndex(null)}
+										className="border-border hover:bg-accent rounded-md border px-2.5 py-1 text-sm disabled:opacity-50"
+									>
+										← 一覧
+									</button>
+									<div className="min-w-0">
+										<p className="truncate text-sm font-semibold">
+											{detailShort.plan.hookText || "(フックなし)"}
+										</p>
+										<p className="text-muted-foreground text-xs">
+											{presetLabel(detailShort.presetId)} ・
+											{Math.round(detailShort.plan.estimatedSeconds)}秒 ・
+											クリップ{detailShort.plan.clips.length}本
+										</p>
+									</div>
+								</div>
+
+								<div className="grid gap-4 md:grid-cols-[1fr_200px]">
+									{/* B: 構成（並べ替え ▲▼ ・除外 ×） */}
+									<div className="flex flex-col gap-2">
+										<span className="text-muted-foreground text-xs font-medium">
+											構成（▲▼で並べ替え・×で除外）
+										</span>
+										<div className="bg-primary/10 border-primary flex items-center gap-2 rounded-lg border p-2.5">
+											<span className="bg-primary text-primary-foreground flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-bold">
+												◎
+											</span>
+											<div className="min-w-0">
+												<span className="text-muted-foreground text-xs">フック</span>
+												<p className="truncate text-sm font-medium">
+													{detailShort.plan.hookText || "(フックなし)"}
+												</p>
+											</div>
+										</div>
+										{[...detailShort.plan.clips]
+											.sort((a, b) => a.order - b.order)
+											.map((clip, pos, arr) => {
+												const seg = segmentForClip({
+													short: detailShort,
+													segmentIndex: clip.segmentIndex,
+												});
+												return (
+													<div
+														key={clip.order}
+														className="border-border bg-card flex items-center gap-2 rounded-lg border p-2"
+													>
+														<div className="flex flex-col leading-none">
+															<button
+																type="button"
+																aria-label="上へ"
+																disabled={pos === 0}
+																onClick={() => moveClipAt({ pos, dir: -1 })}
+																className="text-muted-foreground hover:text-foreground text-[10px] disabled:opacity-30"
+															>
+																▲
+															</button>
+															<button
+																type="button"
+																aria-label="下へ"
+																disabled={pos === arr.length - 1}
+																onClick={() => moveClipAt({ pos, dir: 1 })}
+																className="text-muted-foreground hover:text-foreground text-[10px] disabled:opacity-30"
+															>
+																▼
+															</button>
+														</div>
+														<span className="bg-accent flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-bold">
+															{pos + 1}
+														</span>
+														<span className="text-muted-foreground w-14 shrink-0 text-[11px] tabular-nums">
+															{seg
+																? `${formatDuration({ seconds: seg.start })}・${Math.max(0, Math.round(seg.end - seg.start))}s`
+																: "--"}
+														</span>
+														<p className="min-w-0 flex-1 text-sm leading-snug">
+															{clip.caption}
+														</p>
+														<button
+															type="button"
+															aria-label="除外"
+															disabled={arr.length === 1}
+															onClick={() => removeClipAt(pos)}
+															className="text-muted-foreground hover:text-destructive shrink-0 px-1 text-lg disabled:opacity-30"
+														>
+															×
+														</button>
+													</div>
+												);
+											})}
+										<div className="border-border bg-card flex items-center gap-2 rounded-lg border border-dashed p-2.5">
+											<span className="bg-accent flex size-7 shrink-0 items-center justify-center rounded-full text-[10px] font-bold">
+												END
+											</span>
+											<div className="min-w-0">
+												<span className="text-muted-foreground text-xs">CTA</span>
+												<p className="truncate text-sm font-medium">
+													{detailShort.plan.ctaText || "(なし)"}
+												</p>
+											</div>
+										</div>
+									</div>
+
+									{/* C: 縦型プレビュー */}
+									<div className="flex flex-col items-center gap-2">
+										<span className="text-muted-foreground self-start text-xs font-medium">
+											プレビュー（縦型 9:16）
+										</span>
+										<div className="bg-foreground/95 flex w-[180px] flex-col gap-1.5 rounded-2xl p-2.5 shadow-lg">
+											<div className="rounded bg-white/15 px-2 py-1 text-center text-[11px] font-bold text-white">
+												{detailShort.plan.hookText || ""}
+											</div>
+											{[...detailShort.plan.clips]
+												.sort((a, b) => a.order - b.order)
+												.map((clip) => (
+													<div
+														key={clip.order}
+														className="bg-muted relative flex aspect-video items-end overflow-hidden rounded"
+													>
+														<span className="w-full bg-black/55 px-1 py-0.5 text-center text-[10px] font-bold leading-tight text-white">
+															{clip.caption}
+														</span>
+													</div>
+												))}
+											<div className="rounded bg-white/90 px-2 py-1 text-center text-[10px] font-bold text-black">
+												{detailShort.plan.ctaText || ""} →
+											</div>
+										</div>
+									</div>
+								</div>
+
+								<Button
+									type="button"
+									className="w-full"
+									disabled={isGenerating || appliedDone || okShorts === 0}
+									onClick={handleApplyAll}
+								>
+									{isGenerating && <Spinner className="mr-1" />}
+									{appliedDone ? "出力済み" : `全${okShorts}本をタイムラインに出力`}
+								</Button>
+							</>
+						)}
+
+						{phase === "results" && !detailShort?.ok && (
+							/* ---- 候補一覧（ギャラリー）---- */
 							<>
 								<div className="flex items-center gap-2">
 									<button
@@ -583,7 +776,7 @@ export function AiShortView() {
 										disabled={isGenerating}
 										onClick={() => {
 											setPhase("config");
-											setExpandedIndex(null);
+											setDetailIndex(null);
 											setAppliedDone(false);
 											setStatus({ kind: "idle" });
 										}}
@@ -593,8 +786,11 @@ export function AiShortView() {
 									</button>
 									<span className="text-sm font-medium">{okShorts}本の候補</span>
 								</div>
+								<p className="text-muted-foreground text-xs">
+									カードを開くと個別に確認・微調整できます。
+								</p>
 
-								<div className="flex flex-col gap-2">
+								<div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									{prepared.map((short, index) => {
 										if (!short.ok) {
 											return (
@@ -608,57 +804,33 @@ export function AiShortView() {
 												</div>
 											);
 										}
-										const isOpen = expandedIndex === index;
 										return (
-											<div
+											<button
 												key={`ok-${index}`}
-												className="border-border bg-card overflow-hidden rounded-lg border"
+												type="button"
+												onClick={() => setDetailIndex(index)}
+												className="border-border hover:border-primary/60 flex flex-col overflow-hidden rounded-lg border text-left transition-colors"
 											>
-												<button
-													type="button"
-													onClick={() => setExpandedIndex(isOpen ? null : index)}
-													className="hover:bg-accent flex w-full items-center gap-2 p-2.5 text-left"
-												>
-													<div className="min-w-0 flex-1">
-														<div className="flex items-center gap-1.5">
-															<span className="bg-primary/90 rounded px-1.5 py-0.5 text-[10px] font-medium text-white">
-																{presetLabel(short.presetId)}
-															</span>
-															<span className="text-muted-foreground text-xs">
-																{Math.round(short.plan.estimatedSeconds)}秒 ・
-																クリップ{short.plan.clips.length}本
-															</span>
-														</div>
-														<p className="mt-1 truncate text-sm font-medium">
-															{short.plan.hookText || "(フックなし)"}
-														</p>
-													</div>
-													<ChevronDown
-														className={cn(
-															"text-muted-foreground size-4 shrink-0 transition-transform",
-															isOpen && "rotate-180",
-														)}
-													/>
-												</button>
-												{isOpen && (
-													<div className="border-border flex flex-col gap-1 border-t p-2.5">
-														{short.plan.clips.map((clip) => (
-															<div
-																key={clip.order}
-																className="flex gap-2 text-xs"
-															>
-																<span className="bg-accent flex size-5 shrink-0 items-center justify-center rounded-full font-bold">
-																	{clip.order + 1}
-																</span>
-																<span className="flex-1">{clip.caption}</span>
-															</div>
-														))}
-														<p className="text-muted-foreground mt-1 text-xs">
-															CTA：{short.plan.ctaText || "(なし)"}
-														</p>
-													</div>
-												)}
-											</div>
+												<div className="bg-muted relative flex aspect-video items-center justify-center">
+													<span className="bg-primary/90 absolute left-2 top-2 rounded px-1.5 py-0.5 text-[10px] font-medium text-white">
+														{presetLabel(short.presetId)}
+													</span>
+													<span className="text-muted-foreground/60 text-xs">
+														▶ プレビュー
+													</span>
+													<span className="absolute bottom-2 right-2 rounded bg-black/70 px-1.5 py-0.5 text-[10px] font-medium text-white">
+														できあがり {Math.round(short.plan.estimatedSeconds)}秒
+													</span>
+												</div>
+												<div className="p-2.5">
+													<p className="truncate text-sm font-medium">
+														{short.plan.hookText || "(フックなし)"}
+													</p>
+													<p className="text-muted-foreground truncate text-xs">
+														切り抜き{short.plan.clips.length}本
+													</p>
+												</div>
+											</button>
 										);
 									})}
 								</div>

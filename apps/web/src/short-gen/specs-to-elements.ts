@@ -34,12 +34,15 @@ export function specsToElements({
 	specs,
 	sourceMediaId,
 	sourceVideoParams,
+	sourceDurationSec,
 	canvasSize,
 	telopStyleParams,
 }: {
 	specs: ShortSpecs;
 	sourceMediaId: string;
 	sourceVideoParams: ParamValues;
+	/** Full source length in seconds; lets generated clips be extended back toward it. */
+	sourceDurationSec?: number;
 	canvasSize: { width: number; height: number };
 	telopStyleParams?: Partial<ParamValues>;
 }): {
@@ -47,17 +50,36 @@ export function specsToElements({
 	textElements: CreateTextElement[];
 	ctaTextElement: CreateTextElement | null;
 } {
-	const videoElements: CreateVideoElement[] = specs.clips.map((clip, i) => ({
-		type: "video",
-		mediaId: sourceMediaId,
-		name: `AIショート ${i + 1}`,
-		startTime: T(clip.timelineStartSec),
-		duration: T(clip.durationSec),
-		trimStart: T(clip.sourceStartSec),
-		trimEnd: T(0),
-		sourceDuration: T(clip.sourceEndSec),
-		params: sourceVideoParams,
-	}));
+	// Use the FULL source length as `sourceDuration` (not the clip end) so each
+	// generated clip keeps headroom to be EXTENDED (drag the edge) toward the
+	// source — and shortened. Falls back to the clip end when the length is
+	// unknown. Invariant kept exact: trimStart + duration + trimEnd == sourceDuration.
+	const fullSourceTicks =
+		sourceDurationSec && sourceDurationSec > 0
+			? Math.round(sourceDurationSec * TICKS_PER_SECOND)
+			: 0;
+	const videoElements: CreateVideoElement[] = specs.clips.map((clip, i) => {
+		const trimStartTicks = Math.round(clip.sourceStartSec * TICKS_PER_SECOND);
+		const durationTicks = Math.round(clip.durationSec * TICKS_PER_SECOND);
+		const clipEndTicks = Math.round(clip.sourceEndSec * TICKS_PER_SECOND);
+		const sourceTicks =
+			fullSourceTicks > clipEndTicks ? fullSourceTicks : clipEndTicks;
+		const trimEndTicks = Math.max(
+			0,
+			sourceTicks - trimStartTicks - durationTicks,
+		);
+		return {
+			type: "video",
+			mediaId: sourceMediaId,
+			name: `AIショート ${i + 1}`,
+			startTime: T(clip.timelineStartSec),
+			duration: mediaTime({ ticks: durationTicks }),
+			trimStart: mediaTime({ ticks: trimStartTicks }),
+			trimEnd: mediaTime({ ticks: trimEndTicks }),
+			sourceDuration: mediaTime({ ticks: sourceTicks }),
+			params: sourceVideoParams,
+		};
+	});
 
 	// Only per-clip captions are burned onto the timeline. Hook/CTA TextSpecs are
 	// intentionally excluded here: they share screen position and time windows

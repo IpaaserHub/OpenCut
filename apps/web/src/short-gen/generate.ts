@@ -209,6 +209,7 @@ export async function applyReviewedPlan({
 		specs,
 		sourceMediaId: source.mediaId,
 		sourceVideoParams: source.params,
+		sourceDurationSec: source.durationSec,
 		canvasSize: editor.project.getActive().settings.canvasSize,
 		telopStyleParams,
 	});

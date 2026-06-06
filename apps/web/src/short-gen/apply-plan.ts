@@ -70,9 +70,14 @@ export function applyShortToTimeline({
 
 	editor.command.execute({
 		command: new BatchCommand([
-			addVideoTrack,
+			// Add the text/CTA tracks BEFORE the video track. New overlay tracks
+			// append to the end, and overlay[0] renders on top (see scene-builder:
+			// visibleTracks is reversed to draw bottom-to-top). Adding text first
+			// gives it the lower (front) overlay index, so the full-frame video no
+			// longer covers the captions.
 			addTextTrack,
 			...(addCtaTrack ? [addCtaTrack] : []),
+			addVideoTrack,
 			...insertVideoCommands,
 			...insertTextCommands,
 			...insertCtaCommands,

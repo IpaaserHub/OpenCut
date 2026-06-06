@@ -13,6 +13,7 @@ import {
 	Settings01Icon,
 	SlidersHorizontalIcon,
 	ColorsIcon,
+	Scissor01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 
@@ -25,6 +26,7 @@ export const TAB_KEYS = [
 	"transitions",
 	"captions",
 	"aiShort",
+	"silenceCut",
 	"adjustment",
 	"settings",
 ] as const;
@@ -69,6 +71,10 @@ export const tabs = {
 	aiShort: {
 		icon: createHugeiconsIcon({ icon: AiVideoIcon }),
 		label: "AIショート",
+	},
+	silenceCut: {
+		icon: createHugeiconsIcon({ icon: Scissor01Icon }),
+		label: "無音カット",
 	},
 	adjustment: {
 		icon: createHugeiconsIcon({ icon: SlidersHorizontalIcon }),

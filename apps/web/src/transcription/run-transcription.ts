@@ -116,6 +116,32 @@ function buildSingleAssetTracks({
 }
 
 /**
+ * Decode a media-library asset's audio to mono float32 samples, WITHOUT running
+ * Whisper. Reuses the exact extraction path transcription uses
+ * (`buildSingleAssetTracks` -> `extractTimelineAudio` -> `decodeAudioToFloat32`)
+ * so video containers have their audio track demuxed correctly via mediabunny.
+ * Used by the silence-cut feature, which analyzes the waveform directly and
+ * needs no transcript.
+ */
+export async function extractAssetMonoSamples({
+	editor,
+	asset,
+	sampleRate = DEFAULT_TRANSCRIPTION_SAMPLE_RATE,
+}: {
+	editor: EditorCore;
+	asset: MediaAsset;
+	sampleRate?: number;
+}): Promise<{ samples: Float32Array; sampleRate: number }> {
+	const duration = toElementDurationTicks({ seconds: asset.duration });
+	const audioBlob = await extractTimelineAudio({
+		tracks: buildSingleAssetTracks({ asset, duration }),
+		mediaAssets: editor.media.getAssets(),
+		totalDuration: duration,
+	});
+	return decodeAudioToFloat32({ audioBlob, sampleRate });
+}
+
+/**
  * Transcribe a media-library asset the user picked in the AI short panel. The
  * resulting segments are keyed to `asset.id` so the panel can detect a stale
  * transcript when the source video changes.

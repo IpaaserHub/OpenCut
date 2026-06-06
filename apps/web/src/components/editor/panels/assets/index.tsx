@@ -11,6 +11,7 @@ import { StickersView } from "@/stickers/components/assets-view";
 import { TextView } from "@/text/components/assets-view";
 import { EffectsView } from "@/effects/components/assets-view";
 import { AiShortView } from "@/short-gen/components/ai-short-view";
+import { SilenceCutView } from "@/short-gen/components/silence-cut-view";
 
 export function AssetsPanel() {
 	const { activeTab } = useAssetsPanelStore();
@@ -28,6 +29,7 @@ export function AssetsPanel() {
 		),
 		captions: <Captions />,
 		aiShort: <AiShortView />,
+		silenceCut: <SilenceCutView />,
 		adjustment: (
 			<div className="text-muted-foreground p-4">
 				Adjustment view coming soon...

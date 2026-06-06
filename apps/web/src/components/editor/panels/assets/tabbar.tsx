@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
+import { PanelLeftClose, PanelLeftOpen } from "lucide-react";
 import {
 	Tooltip,
 	TooltipContent,
@@ -15,7 +16,8 @@ import {
 } from "@/components/editor/panels/assets/assets-panel-store";
 
 export function TabBar() {
-	const { activeTab, setActiveTab } = useAssetsPanelStore();
+	const { activeTab, setActiveTab, tabBarExpanded, toggleTabBar } =
+		useAssetsPanelStore();
 	const [showTopFade, setShowTopFade] = useState(false);
 	const [showBottomFade, setShowBottomFade] = useState(false);
 	const scrollRef = useRef<HTMLDivElement>(null);
@@ -49,27 +51,58 @@ export function TabBar() {
 		<div className="relative flex">
 			<div
 				ref={scrollRef}
-				className="scrollbar-hidden relative flex size-full p-1 flex-col items-center justify-start gap-0.5 overflow-y-auto"
+				className={cn(
+					"scrollbar-hidden relative flex h-full flex-col justify-start gap-0.5 overflow-y-auto p-1",
+					tabBarExpanded ? "w-44 items-stretch" : "w-12 items-center",
+				)}
 			>
+				{/* 開閉トグル */}
+				<Button
+					variant="ghost"
+					size={tabBarExpanded ? "sm" : "icon"}
+					aria-label={tabBarExpanded ? "メニューを閉じる" : "メニューを開く"}
+					className={cn(
+						"text-muted-foreground shrink-0",
+						tabBarExpanded ? "h-8 w-full justify-start gap-2" : "h-8 w-8",
+					)}
+					onClick={toggleTabBar}
+				>
+					{tabBarExpanded ? (
+						<PanelLeftClose className="size-4" />
+					) : (
+						<PanelLeftOpen className="size-4" />
+					)}
+					{tabBarExpanded && <span className="text-xs">閉じる</span>}
+				</Button>
+
 				{TAB_KEYS.map((tabKey) => {
 					const tab = tabs[tabKey];
-					return (
+					const button = (
+						<Button
+							variant={activeTab === tabKey ? "secondary" : "ghost"}
+							size={tabBarExpanded ? "sm" : "icon"}
+							aria-label={tab.label}
+							className={cn(
+								"shrink-0",
+								tabBarExpanded ? "h-8 w-full justify-start gap-2" : "h-8 w-8",
+								activeTab !== tabKey && "text-muted-foreground",
+							)}
+							onClick={() => setActiveTab(tabKey)}
+						>
+							<tab.icon />
+							{tabBarExpanded && (
+								<span className="truncate text-xs font-medium">{tab.label}</span>
+							)}
+						</Button>
+					);
+
+					// Expanded: the label is visible, so no tooltip. Collapsed: icon only,
+					// keep the hover tooltip for discoverability.
+					return tabBarExpanded ? (
+						<div key={tabKey}>{button}</div>
+					) : (
 						<Tooltip key={tabKey} delayDuration={10}>
-							<TooltipTrigger asChild>
-								<Button
-									variant={activeTab === tabKey ? "secondary" : "ghost"}
-									size="icon"
-									aria-label={tab.label}
-									className={cn(
-										"shrink-0",
-										"h-8 w-8",
-										activeTab !== tabKey && "text-muted-foreground",
-									)}
-									onClick={() => setActiveTab(tabKey)}
-								>
-									<tab.icon />
-								</Button>
-							</TooltipTrigger>
+							<TooltipTrigger asChild>{button}</TooltipTrigger>
 							<TooltipContent
 								side="right"
 								align="center"

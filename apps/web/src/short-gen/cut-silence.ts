@@ -26,9 +26,25 @@ export type SilenceSource = {
 };
 
 /**
+ * In-memory decoded-PCM cache, keyed by media id, so re-analyzing the same video
+ * (after switching tabs / re-picking it) is instant within a session — no second
+ * demux+decode. Capped to bound memory: PCM is large (~77MB per 20-min clip), so
+ * unlike the tiny transcript text it is NOT persisted to disk; a full page reload
+ * decodes once more.
+ */
+const sampleCache = new Map<string, { samples: Float32Array; sampleRate: number }>();
+const MAX_CACHED_SOURCES = 3;
+
+/** True if this asset's audio is already decoded in memory (re-analyze is instant). */
+export function hasCachedSilenceSource({ mediaId }: { mediaId: string }): boolean {
+	return sampleCache.has(mediaId);
+}
+
+/**
  * Decode a picked media asset to the mono PCM + source descriptor needed for
- * silence cut. Expensive (demux + decode) — call once per asset, then run the
- * pure `detectSilences` repeatedly against `samples` as the user tunes options.
+ * silence cut. Expensive (demux + decode) on a cache miss; instant on a hit.
+ * Once decoded, run the pure `detectSilences` repeatedly against `samples` as the
+ * user tunes options.
  */
 export async function extractSilenceSource({
 	editor,
@@ -39,6 +55,18 @@ export async function extractSilenceSource({
 }): Promise<
 	{ ok: true; source: SilenceSource } | { ok: false; reason: string }
 > {
+	const cached = sampleCache.get(asset.id);
+	if (cached) {
+		return {
+			ok: true,
+			source: {
+				descriptor: sourceVideoFromAsset({ asset }),
+				samples: cached.samples,
+				sampleRate: cached.sampleRate,
+			},
+		};
+	}
+
 	try {
 		const { samples, sampleRate } = await extractAssetMonoSamples({
 			editor,
@@ -46,6 +74,13 @@ export async function extractSilenceSource({
 		});
 		if (samples.length === 0) {
 			return { ok: false, reason: "この動画から音声を検出できませんでした" };
+		}
+		// Cache the decoded PCM, evicting the oldest entry past the cap (Map keeps
+		// insertion order, so the first key is the oldest).
+		sampleCache.set(asset.id, { samples, sampleRate });
+		if (sampleCache.size > MAX_CACHED_SOURCES) {
+			const oldest = sampleCache.keys().next().value;
+			if (oldest !== undefined) sampleCache.delete(oldest);
 		}
 		return {
 			ok: true,

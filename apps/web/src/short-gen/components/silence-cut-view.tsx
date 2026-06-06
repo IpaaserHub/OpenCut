@@ -19,6 +19,7 @@ import { useEditor } from "@/editor/use-editor";
 import {
 	applySilenceCut,
 	extractSilenceSource,
+	hasCachedSilenceSource,
 	type SilenceSource,
 } from "@/short-gen/cut-silence";
 import {
@@ -111,6 +112,10 @@ export function SilenceCutView() {
 	const selectedAsset =
 		videoAssets.find((asset) => asset.id === selectedSourceId) ?? null;
 	const canAnalyze = selectedAsset !== null && selectedAsset.hasAudio !== false;
+	// Already-decoded videos re-analyze instantly (in-memory PCM cache).
+	const isCached = selectedAsset
+		? hasCachedSilenceSource({ mediaId: selectedAsset.id })
+		: false;
 
 	// Re-detect instantly whenever a tuning knob moves — the decode (the only
 	// expensive step) already happened, so this runs over cached PCM in memory.
@@ -362,7 +367,13 @@ export function SilenceCutView() {
 				onClick={handleAnalyze}
 			>
 				{isAnalyzing && <Spinner className="mr-1" />}
-				{isAnalyzing ? "解析中..." : source ? "再解析" : "解析する"}
+				{isAnalyzing
+					? "解析中..."
+					: source
+						? "再解析"
+						: isCached
+							? "解析（前回の結果・すぐ）"
+							: "解析する"}
 			</Button>
 
 			{/* ③ 調整 + プレビュー */}

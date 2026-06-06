@@ -7,12 +7,6 @@ import {
 	TooltipContent,
 } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
-import {
-	SplitButton,
-	SplitButtonLeft,
-	SplitButtonRight,
-	SplitButtonSeparator,
-} from "@/components/ui/split-button";
 import { Slider } from "@/components/ui/slider";
 import { TIMELINE_ZOOM_BUTTON_FACTOR } from "./interaction";
 import { TIMELINE_ZOOM_MAX } from "@/timeline/scale";
@@ -253,19 +247,54 @@ function ToolbarLeftSection() {
 
 function SceneSelector() {
 	const editor = useEditor();
-	const currentScene = editor.scenes.getActiveScene();
+	// Subscribe via the editor's external store so the switcher re-renders on
+	// scene switch (activeId primitive) AND scene creation (scenes array ref).
+	// Returning a tuple of [primitive, array] is shallow-comparable, so this
+	// does not over-render on playback ticks. See use-editor.ts.
+	const [activeId, scenes] = useEditor(
+		(e) =>
+			[
+				e.scenes.getActiveSceneOrNull()?.id ?? null,
+				e.scenes.getScenes(),
+			] as const,
+	);
+
+	const handleSwitch = async (sceneId: string) => {
+		if (sceneId === activeId) return;
+		try {
+			await editor.scenes.switchToScene({ sceneId });
+		} catch (error) {
+			console.error("Failed to switch scene:", error);
+		}
+	};
 
 	return (
-		<div>
-			<SplitButton className="border-foreground/10 border">
-				<SplitButtonLeft>{currentScene?.name || "No Scene"}</SplitButtonLeft>
-				<SplitButtonSeparator />
-				<ScenesView>
-					<SplitButtonRight onClick={() => {}}>
-						<HugeiconsIcon icon={Layers01Icon} className="size-4" />
-					</SplitButtonRight>
-				</ScenesView>
-			</SplitButton>
+		<div className="flex items-center gap-1">
+			{scenes.map((scene) => (
+				<Button
+					key={scene.id}
+					type="button"
+					size="sm"
+					variant="outline"
+					className={cn(
+						"font-normal",
+						activeId === scene.id && "border-primary !text-primary",
+					)}
+					onClick={() => handleSwitch(scene.id)}
+				>
+					{scene.isMain ? "元動画" : scene.name}
+				</Button>
+			))}
+			<ScenesView>
+				<Button
+					type="button"
+					size="icon"
+					variant="outline"
+					aria-label="Manage scenes"
+				>
+					<HugeiconsIcon icon={Layers01Icon} className="size-4" />
+				</Button>
+			</ScenesView>
 		</div>
 	);
 }

@@ -23,6 +23,11 @@ const webEnvSchema = z.object({
 	MARBLE_WORKSPACE_KEY: z.string(),
 	FREESOUND_CLIENT_ID: z.string(),
 	FREESOUND_API_KEY: z.string(),
+
+	// AI short generation (optional — the app boots without these; BYOK can
+	// override the platform key per-request).
+	ANTHROPIC_API_KEY: z.string().optional(),
+	ANTHROPIC_MODEL: z.string().optional(),
 });
 
 export type WebEnv = z.infer<typeof webEnvSchema>;

@@ -14,18 +14,22 @@ export class AddTrackCommand extends Command {
 	constructor({
 		type,
 		index,
+		name,
 	}: {
 		type: TrackType;
 		index?: number;
+		name?: string;
 	}) {
 		super();
 		this.type = type;
 		this.index = index;
+		this.name = name;
 		this.trackId = generateUUID();
 	}
 
 	private type: TrackType;
 	private index?: number;
+	private name?: string;
 
 	execute(): CommandResult | undefined {
 		const editor = EditorCore.getInstance();
@@ -44,12 +48,14 @@ export class AddTrackCommand extends Command {
 						tracks: this.savedState,
 						insertIndex,
 						trackId: this.trackId,
+						name: this.name,
 					})
 				: buildOverlayTrackState({
 						tracks: this.savedState,
 						insertIndex,
 						trackId: this.trackId,
 						trackType: this.type,
+						name: this.name,
 					});
 
 		editor.timeline.updateTracks(updatedTracks);
@@ -72,15 +78,18 @@ function buildAudioTrackState({
 	tracks,
 	insertIndex,
 	trackId,
+	name,
 }: {
 	tracks: SceneTracks;
 	insertIndex: number;
 	trackId: string;
+	name?: string;
 }): SceneTracks {
 	const audioInsertIndex = Math.max(0, insertIndex - tracks.overlay.length - 1);
 	const newTrack = buildEmptyTrack({
 		id: trackId,
 		type: "audio",
+		name,
 	});
 	return {
 		...tracks,
@@ -97,21 +106,23 @@ function buildOverlayTrackState({
 	insertIndex,
 	trackId,
 	trackType,
+	name,
 }: {
 	tracks: SceneTracks;
 	insertIndex: number;
 	trackId: string;
 	trackType: Exclude<TrackType, "audio">;
+	name?: string;
 }): SceneTracks {
 	const overlayInsertIndex = Math.min(insertIndex, tracks.overlay.length);
 	const newTrack =
 		trackType === "video"
-			? buildEmptyTrack({ id: trackId, type: "video" })
+			? buildEmptyTrack({ id: trackId, type: "video", name })
 			: trackType === "text"
-				? buildEmptyTrack({ id: trackId, type: "text" })
+				? buildEmptyTrack({ id: trackId, type: "text", name })
 				: trackType === "graphic"
-					? buildEmptyTrack({ id: trackId, type: "graphic" })
-					: buildEmptyTrack({ id: trackId, type: "effect" });
+					? buildEmptyTrack({ id: trackId, type: "graphic", name })
+					: buildEmptyTrack({ id: trackId, type: "effect", name });
 	return {
 		...tracks,
 		overlay: [

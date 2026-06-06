@@ -22,7 +22,7 @@ interface BuiltInTextTemplate {
 	params: Partial<ParamValues>;
 }
 
-const BUILT_IN_TEXT_TEMPLATES = [
+export const BUILT_IN_TEXT_TEMPLATES = [
 	{
 		id: "standard-text-template",
 		name: "標準テキスト",
@@ -156,7 +156,7 @@ function getTemplateName({
 	return content ? content.slice(0, 24) : `テンプレート ${index}`;
 }
 
-function buildTextParams({
+export function buildTextParams({
 	params,
 }: {
 	params: Partial<ParamValues>;
@@ -332,7 +332,7 @@ function TextTemplateItem({
 	);
 }
 
-function TextTemplatePreview({ params }: { params: ParamValues }) {
+export function TextTemplatePreview({ params }: { params: ParamValues }) {
 	const content = getTextContent({ params });
 	const backgroundEnabled = params["background.enabled"] === true;
 	const backgroundColor =

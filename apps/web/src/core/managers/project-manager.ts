@@ -18,6 +18,7 @@ import { DEFAULT_FPS } from "@/fps/defaults";
 import { buildDefaultScene, getProjectDurationFromScenes } from "@/timeline/scenes";
 import { buildScene } from "@/services/renderer/scene-builder";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
+import { mediaTimeFromSeconds } from "@/wasm";
 import {
 	CURRENT_PROJECT_VERSION,
 	migrations,
@@ -673,9 +674,17 @@ export class ProjectManager {
 		tempCanvas.width = canvasSize.width;
 		tempCanvas.height = canvasSize.height;
 
+		// Capture the thumbnail ~1 second in rather than at time 0. At time 0
+		// many videos show a black intro/fade-in frame (or no clip covers t=0),
+		// which composited on the default black background yields an all-black
+		// thumbnail. For clips shorter than 1s, fall back to the midpoint so we
+		// never seek past the end (which would also be black).
+		const oneSecond = mediaTimeFromSeconds({ seconds: 1 });
+		const thumbnailTime = duration > oneSecond ? oneSecond : duration / 2;
+
 		await renderer.renderToCanvas({
 			node: scene,
-			time: 0,
+			time: thumbnailTime,
 			targetCanvas: tempCanvas,
 		});
 

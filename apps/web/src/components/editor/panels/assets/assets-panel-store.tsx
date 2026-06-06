@@ -19,14 +19,14 @@ import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
 
 export const TAB_KEYS = [
 	"media",
+	"aiShort",
+	"silenceCut",
 	"sounds",
 	"text",
 	"stickers",
 	"effects",
 	"transitions",
 	"captions",
-	"aiShort",
-	"silenceCut",
 	"adjustment",
 	"settings",
 ] as const;

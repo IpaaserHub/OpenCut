@@ -8,12 +8,14 @@ import type { SceneTracks, TimelineElement, TimelineTrack } from "@/timeline";
 import {
 	buildEmptyTrack,
 	validateElementTrackCompatibility,
+	applyTrackRippleInsert,
 } from "@/timeline/placement";
 import type {
 	PlannedElementMove,
 	PlannedTrackCreation,
 } from "@/timeline/group-move";
 import { findTrackInSceneTracks } from "@/timeline/track-element-update";
+import type { MediaTime } from "@/wasm";
 
 export class MoveElementCommand extends Command {
 	private savedState: SceneTracks | null = null;
@@ -21,17 +23,27 @@ export class MoveElementCommand extends Command {
 	constructor({
 		moves,
 		createTracks = [],
+		rippleInsert,
 	}: {
 		moves: PlannedElementMove[];
 		createTracks?: PlannedTrackCreation[];
+		rippleInsert?: {
+			insertTime: MediaTime;
+			duration: MediaTime;
+			trackId: string;
+		};
 	}) {
 		super();
 		this.moves = moves;
 		this.createTracks = createTracks;
+		this.rippleInsert = rippleInsert;
 	}
 
 	private readonly moves: PlannedElementMove[];
 	private readonly createTracks: PlannedTrackCreation[];
+	private readonly rippleInsert:
+		| { insertTime: MediaTime; duration: MediaTime; trackId: string }
+		| undefined;
 
 	execute(): CommandResult | undefined {
 		const editor = EditorCore.getInstance();
@@ -48,6 +60,15 @@ export class MoveElementCommand extends Command {
 					type: createTrack.type,
 				}),
 				insertIndex: createTrack.index,
+			});
+		}
+
+		if (this.rippleInsert) {
+			tracksToUpdate = applyTrackRippleInsert({
+				tracks: tracksToUpdate,
+				targetTrackId: this.rippleInsert.trackId,
+				insertTime: this.rippleInsert.insertTime,
+				duration: this.rippleInsert.duration,
 			});
 		}
 

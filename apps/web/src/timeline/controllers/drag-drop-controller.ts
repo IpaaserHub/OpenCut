@@ -15,6 +15,7 @@ import {
 	buildEffectElement,
 } from "@/timeline/element-utils";
 import { AddTrackCommand, InsertElementCommand } from "@/commands/timeline";
+import type { InsertElementParams } from "@/commands/timeline/element/insert-element";
 import { BatchCommand } from "@/commands";
 import type { Command } from "@/commands/base-command";
 import { computeDropTarget } from "@/timeline/components/drop-target";
@@ -50,10 +51,7 @@ export interface DragDropConfig {
 		asset: ProcessedMediaAsset;
 	}) => Promise<MediaAsset | null>;
 	executeCommand: (command: Command) => void;
-	insertElement: (args: {
-		placement: { mode: "explicit"; trackId: string };
-		element: CreateTimelineElement;
-	}) => void;
+	insertElement: (args: InsertElementParams) => void;
 	addClipEffect: (args: {
 		trackId: string;
 		elementId: string;
@@ -222,6 +220,7 @@ export class DragDropController {
 			pixelsPerSecond: BASE_TIMELINE_PIXELS_PER_SECOND,
 			zoomLevel: this.config.zoomLevel,
 			targetElementTypes,
+			allowRippleInsert: true,
 		});
 
 		const fps = this.config.getActiveProjectFps();
@@ -335,7 +334,10 @@ export class DragDropController {
 					addTrackCmd,
 					new InsertElementCommand({
 						element,
-						placement: { mode: "explicit", trackId: addTrackCmd.getTrackId() },
+						placement: {
+							mode: "explicit",
+							trackId: addTrackCmd.getTrackId(),
+						},
 					}),
 				]),
 			);
@@ -345,8 +347,32 @@ export class DragDropController {
 		const tracks = orderedTracks({ sceneTracks: this.config.getSceneTracks() });
 		const track = tracks[target.trackIndex];
 		if (!track) return;
+		if (target.rippleInsert) {
+			const placement: InsertElementParams["placement"] =
+				track.type === trackType
+					? {
+							mode: "explicit",
+							trackId: track.id,
+							rippleInsert: true,
+						}
+					: {
+							mode: "auto",
+							trackType,
+							insertIndex: target.trackIndex,
+							rippleInsert: true,
+						};
+			this.config.insertElement({
+				placement,
+				element,
+			});
+			return;
+		}
+
 		this.config.insertElement({
-			placement: { mode: "explicit", trackId: track.id },
+			placement: {
+				mode: "explicit",
+				trackId: track.id,
+			},
 			element,
 		});
 	}
@@ -479,6 +505,11 @@ export class DragDropController {
 			startTime: target.xPosition,
 		});
 
+		if (target.rippleInsert) {
+			this.insertAtTarget({ element, target, trackType: "effect" });
+			return;
+		}
+
 		const existingEffectTrack = orderedTracks({
 			sceneTracks: this.config.getSceneTracks(),
 		}).find((track) => track.type === "effect");
@@ -560,6 +591,7 @@ export class DragDropController {
 						elementDuration: duration,
 						pixelsPerSecond: BASE_TIMELINE_PIXELS_PER_SECOND,
 						zoomLevel: this.config.zoomLevel,
+						allowRippleInsert: true,
 					});
 
 					const trackType: TrackType =

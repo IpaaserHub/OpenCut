@@ -14,6 +14,7 @@ import { floatToFrameRate } from "@/fps/utils";
 import { graphicsRegistry, registerDefaultGraphics } from "@/graphics";
 import {
 	applyPlacement,
+	applyTrackRippleInsert,
 	canElementGoOnTrack,
 	resolveTrackPlacement,
 	validateElementTrackCompatibility,
@@ -21,8 +22,13 @@ import {
 import { roundMediaTime } from "@/wasm";
 
 type InsertElementPlacement =
-	| { mode: "explicit"; trackId: string }
-	| { mode: "auto"; trackType?: TrackType; insertIndex?: number };
+	| { mode: "explicit"; trackId: string; rippleInsert?: boolean }
+	| {
+			mode: "auto";
+			trackType?: TrackType;
+			insertIndex?: number;
+			rippleInsert?: boolean;
+	  };
 
 export interface InsertElementParams {
 	element: CreateTimelineElement;
@@ -210,6 +216,21 @@ export class InsertElementCommand extends Command {
 		element: TimelineElement;
 	}): { updatedTracks: SceneTracks; targetTrackId: string } | null {
 		const placement = this.placement;
+		// Ripple only the explicit target row so an insert never pushes content on
+		// other rows. Auto placement resolves to a fresh / first-available track
+		// that already has room at the insert time, so it needs no ripple.
+		const rippleTargetTrackId =
+			placement.rippleInsert === true && placement.mode === "explicit"
+				? placement.trackId
+				: null;
+		const tracksForPlacement = rippleTargetTrackId
+			? applyTrackRippleInsert({
+					tracks,
+					targetTrackId: rippleTargetTrackId,
+					insertTime: element.startTime,
+					duration: element.duration,
+				})
+			: tracks;
 
 		if (
 			placement.mode === "auto" &&
@@ -226,7 +247,7 @@ export class InsertElementCommand extends Command {
 		}
 
 		const placementResult = resolveTrackPlacement({
-			tracks,
+			tracks: tracksForPlacement,
 			...(placement.mode === "auto" && placement.trackType
 				? { trackType: placement.trackType }
 				: { elementType: element.type }),
@@ -244,10 +265,14 @@ export class InsertElementCommand extends Command {
 		if (!placementResult) {
 			if (placement.mode === "explicit") {
 				const targetTrack =
-					tracks.main.id === placement.trackId
-						? tracks.main
-						: (tracks.overlay.find((track) => track.id === placement.trackId) ??
-							tracks.audio.find((track) => track.id === placement.trackId));
+					tracksForPlacement.main.id === placement.trackId
+						? tracksForPlacement.main
+						: (tracksForPlacement.overlay.find(
+								(track) => track.id === placement.trackId,
+							) ??
+							tracksForPlacement.audio.find(
+								(track) => track.id === placement.trackId,
+							));
 				if (!targetTrack) {
 					console.error("Track not found:", placement.trackId);
 					return null;
@@ -277,7 +302,7 @@ export class InsertElementCommand extends Command {
 				: element;
 
 		const appliedPlacement = applyPlacement({
-			tracks,
+			tracks: tracksForPlacement,
 			placementResult,
 			elements: [elementToPlace],
 			newTrackInsertIndexOverride:

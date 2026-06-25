@@ -262,6 +262,7 @@ export interface DropTarget {
 	insertPosition: "above" | "below" | null;
 	xPosition: MediaTime;
 	targetElement: { elementId: string; trackId: string } | null;
+	rippleInsert?: boolean;
 }
 
 export interface ComputeDropTargetParams {
@@ -277,7 +278,16 @@ export interface ComputeDropTargetParams {
 	verticalDragDirection?: "up" | "down" | null;
 	startTimeOverride?: MediaTime;
 	excludeElementId?: string;
+	excludeElementIds?: string[];
 	targetElementTypes?: string[];
+	allowRippleInsert?: boolean;
+	// Internal drags pass the dragged element's snapped left edge as
+	// `startTimeOverride`, which drives `xPosition`. Without this, ripple seam
+	// detection keys off that left edge instead of the pointer, so hovering the
+	// cursor over a seam does nothing unless the element's left edge also lands
+	// there. Set this so ripple detection follows the cursor (mouseX) like an
+	// external drag; the resolved insert position still snaps to the seam.
+	detectRippleFromCursor?: boolean;
 }
 
 export interface ClipboardItem {

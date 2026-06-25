@@ -5,6 +5,7 @@ export interface PlacementTimeSpan {
 	startTime: MediaTime;
 	duration: MediaTime;
 	excludeElementId?: string;
+	excludeElementIds?: string[];
 }
 
 export type PlacementSubject =

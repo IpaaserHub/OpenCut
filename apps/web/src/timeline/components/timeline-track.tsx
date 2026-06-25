@@ -6,6 +6,7 @@ import type { TimelineTrack } from "@/timeline";
 import type { TimelineElement as TimelineElementType } from "@/timeline";
 import { TIMELINE_LAYERS } from "./layers";
 import type { ElementDragView } from "@/timeline";
+import { TrackGapAffordances } from "./track-gap-affordances";
 
 interface TimelineTrackContentProps {
 	track: TimelineTrack;
@@ -48,7 +49,7 @@ export function TimelineTrackContent({
 	const { isElementSelected } = useElementSelection();
 
 	return (
-		<div className="relative size-full">
+		<div className="group/track relative size-full">
 			<button
 				type="button"
 				className="absolute inset-0 m-0 size-full appearance-none border-0 bg-transparent p-0"
@@ -109,6 +110,9 @@ export function TimelineTrackContent({
 					})
 				)}
 			</div>
+			{dragView.kind !== "dragging" && (
+				<TrackGapAffordances track={track} zoomLevel={zoomLevel} />
+			)}
 		</div>
 	);
 }

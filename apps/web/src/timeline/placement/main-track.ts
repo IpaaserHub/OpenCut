@@ -6,12 +6,18 @@ export const MAIN_TRACK_NAME = "Main Track";
 export function getEarliestMainTrackElement({
 	mainTrack,
 	excludeElementId,
+	excludeElementIds,
 }: {
 	mainTrack: VideoTrack;
 	excludeElementId?: string;
+	excludeElementIds?: string[];
 }): TimelineElement | null {
+	const excludedElementIds = new Set([
+		...(excludeElementIds ?? []),
+		...(excludeElementId ? [excludeElementId] : []),
+	]);
 	const elements = mainTrack.elements.filter((element) => {
-		return !excludeElementId || element.id !== excludeElementId;
+		return !excludedElementIds.has(element.id);
 	});
 	if (elements.length === 0) {
 		return null;
@@ -29,11 +35,13 @@ export function enforceMainTrackStart({
 	targetTrackId,
 	requestedStartTime,
 	excludeElementId,
+	excludeElementIds,
 }: {
 	tracks: SceneTracks;
 	targetTrackId: string;
 	requestedStartTime: MediaTime;
 	excludeElementId?: string;
+	excludeElementIds?: string[];
 }): MediaTime {
 	if (tracks.main.id !== targetTrackId) {
 		return requestedStartTime;
@@ -42,6 +50,7 @@ export function enforceMainTrackStart({
 	const earliestElement = getEarliestMainTrackElement({
 		mainTrack: tracks.main,
 		excludeElementId,
+		excludeElementIds,
 	});
 	if (!earliestElement) {
 		return ZERO_MEDIA_TIME;

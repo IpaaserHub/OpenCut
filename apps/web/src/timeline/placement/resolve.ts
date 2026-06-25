@@ -39,6 +39,7 @@ function buildExistingTrackResult({
 		targetTrackId: track.id,
 		requestedStartTime,
 		excludeElementId: firstSpan?.excludeElementId,
+		excludeElementIds: firstSpan?.excludeElementIds,
 	});
 	return {
 		kind: "existingTrack",

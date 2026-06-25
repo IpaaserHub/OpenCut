@@ -40,6 +40,7 @@ import {
 	UpdateElementsCommand,
 	SplitElementsCommand,
 	MoveElementCommand,
+	CloseGapCommand,
 	TracksSnapshotCommand,
 	UpsertKeyframeCommand,
 	RemoveKeyframeCommand,
@@ -159,9 +160,15 @@ export class TimelineManager {
 	moveElements({
 		moves,
 		createTracks,
+		rippleInsert,
 	}: {
 		moves: PlannedElementMove[];
 		createTracks?: PlannedTrackCreation[];
+		rippleInsert?: {
+			insertTime: MediaTime;
+			duration: MediaTime;
+			trackId: string;
+		};
 	}): void {
 		if (moves.length === 0) {
 			return;
@@ -170,6 +177,24 @@ export class TimelineManager {
 		const command = new MoveElementCommand({
 			moves,
 			createTracks,
+			rippleInsert,
+		});
+		this.editor.command.execute({ command });
+	}
+
+	closeGap({
+		trackId,
+		gapStartTime,
+		gapDuration,
+	}: {
+		trackId: string;
+		gapStartTime: MediaTime;
+		gapDuration: MediaTime;
+	}): void {
+		const command = new CloseGapCommand({
+			trackId,
+			gapStartTime,
+			gapDuration,
 		});
 		this.editor.command.execute({ command });
 	}

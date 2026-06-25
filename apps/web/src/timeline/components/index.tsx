@@ -90,6 +90,7 @@ import { useEditor } from "@/editor/use-editor";
 import { useScrollPosition } from "@/timeline/hooks/use-scroll-position";
 import { useTimelinePlayhead } from "@/timeline/hooks/use-timeline-playhead";
 import { DragLine } from "./drag-line";
+import { RippleInsertIndicator } from "./ripple-insert-indicator";
 import { invokeAction } from "@/actions";
 import { resolveTimelineElementIntersections } from "./selection-hit-testing";
 import { cn } from "@/utils/ui";
@@ -162,9 +163,10 @@ export function Timeline() {
 	const { height: timelineHeaderHeightValue } = useContainerSize({
 		containerRef: timelineHeaderRef,
 	});
-	const { viewportWidth: tracksViewportWidth } = useScrollPosition({
-		scrollRef: tracksScrollRef,
-	});
+	const { scrollLeft: tracksScrollLeft, viewportWidth: tracksViewportWidth } =
+		useScrollPosition({
+			scrollRef: tracksScrollRef,
+		});
 
 	const handleSnapPointChange = useCallback((snapPoint: SnapPoint | null) => {
 		setCurrentSnapPoint(snapPoint);
@@ -315,6 +317,7 @@ export function Timeline() {
 			onSnapPointChange: handleSnapPointChange,
 		});
 	const isElementDragging = dragView.kind === "dragging";
+	const elementDropTarget = isElementDragging ? dragView.dropTarget : null;
 
 	const {
 		dragState: bookmarkDragState,
@@ -465,13 +468,33 @@ export function Timeline() {
 					<DragLine
 						dropTarget={dropTarget}
 						tracks={tracks}
-						isVisible={isDragOver && !dropTarget?.targetElement}
+						isVisible={
+							isDragOver &&
+							!dropTarget?.targetElement &&
+							!dropTarget?.rippleInsert
+						}
+						headerHeight={timelineHeaderHeight}
+					/>
+					<RippleInsertIndicator
+						dropTarget={dropTarget}
+						isVisible={isDragOver}
+						zoomLevel={zoomLevel}
+						scrollLeft={tracksScrollLeft}
+						tracks={tracks}
 						headerHeight={timelineHeaderHeight}
 					/>
 					<DragLine
-						dropTarget={isElementDragging ? dragView.dropTarget : null}
+						dropTarget={elementDropTarget}
 						tracks={tracks}
+						isVisible={isElementDragging && !elementDropTarget?.rippleInsert}
+						headerHeight={timelineHeaderHeight}
+					/>
+					<RippleInsertIndicator
+						dropTarget={elementDropTarget}
 						isVisible={isElementDragging}
+						zoomLevel={zoomLevel}
+						scrollLeft={tracksScrollLeft}
+						tracks={tracks}
 						headerHeight={timelineHeaderHeight}
 					/>
 

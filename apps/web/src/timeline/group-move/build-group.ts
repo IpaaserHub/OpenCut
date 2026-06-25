@@ -30,11 +30,12 @@ export function buildMoveGroup({
 
 	const seen = new Set<string>();
 	const orderedRefs = [anchorRef, ...selectedElements].filter((elementRef) => {
-		if (seen.has(elementRef.elementId)) {
+		const refKey = `${elementRef.trackId}:${elementRef.elementId}`;
+		if (seen.has(refKey)) {
 			return false;
 		}
 
-		seen.add(elementRef.elementId);
+		seen.add(refKey);
 		return true;
 	});
 

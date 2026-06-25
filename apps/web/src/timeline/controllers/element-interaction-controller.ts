@@ -8,6 +8,7 @@ import {
 } from "@/timeline/group-move";
 import { BASE_TIMELINE_PIXELS_PER_SECOND } from "@/timeline/scale";
 import {
+	addMediaTime,
 	maxMediaTime,
 	type MediaTime,
 	mediaTime,
@@ -64,7 +65,15 @@ export interface PlaybackReader {
 }
 
 export interface TimelineOps {
-	moveElements: (args: Pick<GroupMoveResult, "moves" | "createTracks">) => void;
+	moveElements: (
+		args: Pick<GroupMoveResult, "moves" | "createTracks"> & {
+			rippleInsert?: {
+				insertTime: MediaTime;
+				duration: MediaTime;
+				trackId: string;
+			};
+		},
+	) => void;
 }
 
 export interface SnapConfig {
@@ -101,7 +110,7 @@ interface MousedownSnapshot {
 
 interface DragProgress {
 	moveGroup: MoveGroup;
-	// Pre-minted per member so the identity of any "new track" created by
+	// Pre-minted per source track so the identity of any "new track" created by
 	// this drag stays stable across mousemove-driven drop-target recomputes.
 	// `resolveGroupMoveForDrop` runs every mousemove and emits a
 	// `createTracks[]` carrying these IDs; downstream consumers (snap
@@ -154,6 +163,10 @@ function orderedTracks(sceneTracks: SceneTracks): TimelineTrack[] {
 	return [...sceneTracks.overlay, sceneTracks.main, ...sceneTracks.audio];
 }
 
+function countSourceTracks({ group }: { group: MoveGroup }): number {
+	return new Set(group.members.map((member) => member.trackId)).size;
+}
+
 function movedPastDragThreshold({
 	current,
 	origin,
@@ -203,6 +216,7 @@ function resolveDropTarget({
 	zoomLevel,
 	snappedTime,
 	verticalDragDirection,
+	excludeElementIds,
 }: {
 	clientX: number;
 	clientY: number;
@@ -213,6 +227,7 @@ function resolveDropTarget({
 	zoomLevel: number;
 	snappedTime: MediaTime;
 	verticalDragDirection: "up" | "down" | null;
+	excludeElementIds: readonly string[];
 }): DropTarget | null {
 	const containerRect = viewport
 		.getTracksContainerEl()
@@ -242,8 +257,69 @@ function resolveDropTarget({
 		zoomLevel,
 		startTimeOverride: snappedTime,
 		excludeElementId: movingElement.id,
+		excludeElementIds: [...excludeElementIds],
+		allowRippleInsert: true,
+		detectRippleFromCursor: true,
 		verticalDragDirection,
 	});
+}
+
+function buildRippleInsertForMove({
+	group,
+	moves,
+	dropTarget,
+}: {
+	group: MoveGroup;
+	moves: GroupMoveResult["moves"];
+	dropTarget: DropTarget | null;
+}):
+	| { insertTime: MediaTime; duration: MediaTime; trackId: string }
+	| undefined {
+	if (!dropTarget?.rippleInsert) {
+		return undefined;
+	}
+
+	const membersByElementId = new Map(
+		group.members.map((member) => [member.elementId, member]),
+	);
+	let insertTime: MediaTime | null = null;
+	let endTime: MediaTime | null = null;
+
+	for (const move of moves) {
+		const member = membersByElementId.get(move.elementId);
+		if (!member) continue;
+
+		const moveEndTime = addMediaTime({
+			a: move.newStartTime,
+			b: member.duration,
+		});
+		if (insertTime == null || move.newStartTime < insertTime) {
+			insertTime = move.newStartTime;
+		}
+		if (endTime == null || moveEndTime > endTime) {
+			endTime = moveEndTime;
+		}
+	}
+
+	if (insertTime == null || endTime == null || endTime <= insertTime) {
+		return undefined;
+	}
+
+	// Ripple only the track the dragged anchor lands on, so later elements on
+	// other rows stay put.
+	const anchorMove = moves.find(
+		(move) => move.elementId === group.anchor.elementId,
+	);
+	const trackId = anchorMove?.targetTrackId ?? moves[0]?.targetTrackId;
+	if (!trackId) {
+		return undefined;
+	}
+
+	return {
+		insertTime,
+		duration: subMediaTime({ a: endTime, b: insertTime }),
+		trackId,
+	};
 }
 
 function resolveGroupMoveForDrop({
@@ -276,13 +352,29 @@ function resolveGroupMoveForDrop({
 	const targetTrack = orderedTracks(tracks)[dropTarget.trackIndex];
 	if (!targetTrack) return null;
 
+	const existingTrackMove = resolveGroupMove({
+		group,
+		tracks,
+		anchorStartTime,
+		target: {
+			kind: "existingTrack",
+			anchorTargetTrackId: targetTrack.id,
+			ignoreTargetCollisions: dropTarget.rippleInsert === true,
+		},
+	});
+
 	return (
+		existingTrackMove ??
 		resolveGroupMove({
 			group,
 			tracks,
 			anchorStartTime,
-			target: { kind: "existingTrack", anchorTargetTrackId: targetTrack.id },
-		}) ?? newTracksFallback()
+			target: {
+				kind: "newTracks",
+				anchorInsertIndex: dropTarget.trackIndex,
+				newTrackIds: [...reservedNewTrackIds],
+			},
+		})
 	);
 }
 
@@ -507,19 +599,35 @@ export class ElementInteractionController {
 				startMouseY: mousedown.origin.y,
 				currentMouseY: clientY,
 			}),
+			excludeElementIds: drag.moveGroup.members.map(
+				(member) => member.elementId,
+			),
 		});
+
+		// On a ripple insert the seam (not the pointer-offset left edge) is the
+		// landing spot, so anchor the move there — otherwise the element detects
+		// at the seam but drops where the cursor's grab offset put it.
+		const anchorStartTime =
+			anchorDropTarget?.rippleInsert === true
+				? anchorDropTarget.xPosition
+				: snappedTime;
 
 		const nextGroupMoveResult = anchorDropTarget
 			? resolveGroupMoveForDrop({
 					group: drag.moveGroup,
 					tracks,
-					anchorStartTime: snappedTime,
+					anchorStartTime,
 					dropTarget: anchorDropTarget,
 					reservedNewTrackIds: drag.reservedNewTrackIds,
 				})
 			: null;
 
 		drag.groupMoveResult = nextGroupMoveResult;
+		if (anchorDropTarget?.rippleInsert && nextGroupMoveResult) {
+			drag.dropTarget = anchorDropTarget;
+			return;
+		}
+
 		drag.dropTarget =
 			anchorDropTarget && (anchorDropTarget.isNewTrack || !nextGroupMoveResult)
 				? { ...anchorDropTarget, isNewTrack: true }
@@ -610,7 +718,10 @@ export class ElementInteractionController {
 
 		const drag: DragProgress = {
 			moveGroup,
-			reservedNewTrackIds: moveGroup.members.map(() => generateUUID()),
+			reservedNewTrackIds: Array.from(
+				{ length: countSourceTracks({ group: moveGroup }) },
+				() => generateUUID(),
+			),
 			currentTime: snappedTime,
 			currentMouseX: clientX,
 			currentMouseY: clientY,
@@ -718,11 +829,17 @@ export class ElementInteractionController {
 				originalStartTime !== move.newStartTime
 			);
 		});
+		const rippleInsert = buildRippleInsertForMove({
+			group: moveGroup,
+			moves: groupMoveResult.moves,
+			dropTarget: drag.dropTarget,
+		});
 
-		if (didMove || groupMoveResult.createTracks.length > 0) {
+		if (didMove || groupMoveResult.createTracks.length > 0 || rippleInsert) {
 			this.deps.timeline.moveElements({
 				moves: groupMoveResult.moves,
 				createTracks: groupMoveResult.createTracks,
+				...(rippleInsert ? { rippleInsert } : {}),
 			});
 		}
 

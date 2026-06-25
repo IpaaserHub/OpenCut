@@ -1,6 +1,10 @@
 import type { TimelineTrack, TimelineElement } from "@/timeline";
 import type { ComputeDropTargetParams, DropTarget } from "@/timeline";
-import { resolveTrackPlacement } from "@/timeline/placement";
+import {
+	canRippleInsertOnTrack,
+	findRippleInsertTime,
+	resolveTrackPlacement,
+} from "@/timeline/placement";
 import { TIMELINE_TRACK_GAP_PX } from "./layout";
 import { getTrackHeight } from "./track-layout";
 import {
@@ -85,6 +89,7 @@ function getTrackAtY({
 }
 
 const EMPTY_TARGET_ELEMENT = null;
+const RIPPLE_INSERT_EDGE_SNAP_THRESHOLD_PX = 48;
 
 function fallbackNewTrackDropTarget({
 	xPosition,
@@ -113,10 +118,12 @@ export function computeDropTarget({
 	verticalDragDirection,
 	startTimeOverride,
 	excludeElementId,
+	excludeElementIds,
 	targetElementTypes,
+	allowRippleInsert,
+	detectRippleFromCursor,
 }: ComputeDropTargetParams): DropTarget {
 	const orderedTracks = [...tracks.overlay, tracks.main, ...tracks.audio];
-	const mainTrackIndex = tracks.overlay.length;
 	const xPosition =
 		startTimeOverride !== undefined
 			? startTimeOverride
@@ -133,7 +140,14 @@ export function computeDropTarget({
 		const placementResult = resolveTrackPlacement({
 			tracks,
 			elementType,
-			timeSpans: [{ startTime: xPosition, duration: elementDuration, excludeElementId }],
+			timeSpans: [
+				{
+					startTime: xPosition,
+					duration: elementDuration,
+					excludeElementId,
+					excludeElementIds,
+				},
+			],
 			strategy: {
 				type: "preferIndex",
 				trackIndex: 0,
@@ -168,7 +182,14 @@ export function computeDropTarget({
 		const placementResult = resolveTrackPlacement({
 			tracks,
 			elementType,
-			timeSpans: [{ startTime: xPosition, duration: elementDuration, excludeElementId }],
+			timeSpans: [
+				{
+					startTime: xPosition,
+					duration: elementDuration,
+					excludeElementId,
+					excludeElementIds,
+				},
+			],
 			strategy: {
 				type: "preferIndex",
 				trackIndex: isAboveAllTracks ? 0 : orderedTracks.length - 1,
@@ -193,6 +214,58 @@ export function computeDropTarget({
 
 	const { trackIndex, relativeY } = trackAtMouse;
 	const track = orderedTracks[trackIndex];
+	// Internal drags drive `xPosition` from the dragged element's left edge.
+	// Seam detection should follow the pointer instead, so derive the requested
+	// time from the cursor when asked; the snapped result is still returned as
+	// `xPosition` below so the insert lands on the seam.
+	const rippleRequestedTime =
+		detectRippleFromCursor === true
+			? mediaTime({
+					ticks: Math.round(
+						Math.max(0, mouseX / (pixelsPerSecond * zoomLevel)) *
+							TICKS_PER_SECOND,
+					),
+				})
+			: xPosition;
+	const rippleInsertTime =
+		allowRippleInsert === true
+			? findRippleInsertTime({
+					track,
+					requestedTime: rippleRequestedTime,
+					excludeElementIds: [
+						...(excludeElementIds ?? []),
+						...(excludeElementId ? [excludeElementId] : []),
+					],
+					snapThreshold: mediaTime({
+						ticks: Math.round(
+							(RIPPLE_INSERT_EDGE_SNAP_THRESHOLD_PX /
+								(pixelsPerSecond * zoomLevel)) *
+								TICKS_PER_SECOND,
+						),
+					}),
+				})
+			: null;
+	const canRippleInsertAtTrackTime =
+		rippleInsertTime !== null &&
+		canRippleInsertOnTrack({
+			track,
+			insertTime: rippleInsertTime,
+			excludeElementIds: [
+				...(excludeElementIds ?? []),
+				...(excludeElementId ? [excludeElementId] : []),
+			],
+		});
+
+	if (canRippleInsertAtTrackTime) {
+		return {
+			trackIndex,
+			isNewTrack: false,
+			insertPosition: null,
+			xPosition: rippleInsertTime,
+			targetElement: EMPTY_TARGET_ELEMENT,
+			rippleInsert: true,
+		};
+	}
 
 	if (targetElementTypes && targetElementTypes.length > 0) {
 		const targetElement = findElementAtPosition({
@@ -218,7 +291,14 @@ export function computeDropTarget({
 	const placementResult = resolveTrackPlacement({
 		tracks,
 		elementType,
-		timeSpans: [{ startTime: xPosition, duration: elementDuration, excludeElementId }],
+		timeSpans: [
+			{
+				startTime: xPosition,
+				duration: elementDuration,
+				excludeElementId,
+				excludeElementIds,
+			},
+		],
 		strategy: {
 			type: "preferIndex",
 			trackIndex,

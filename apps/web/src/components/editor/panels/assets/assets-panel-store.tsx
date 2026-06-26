@@ -12,7 +12,6 @@ import {
 	TextIcon,
 	Settings01Icon,
 	SlidersHorizontalIcon,
-	ColorsIcon,
 	Scissor01Icon,
 } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon, type IconSvgElement } from "@hugeicons/react";
@@ -33,11 +32,13 @@ export const TAB_KEYS = [
 
 export type Tab = (typeof TAB_KEYS)[number];
 
-const createHugeiconsIcon =
-	({ icon }: { icon: IconSvgElement }) =>
-	({ className }: { className?: string }) => (
+function createHugeiconsIcon({ icon }: { icon: IconSvgElement }) {
+	const AssetsPanelTabIcon = ({ className }: { className?: string }) => (
 		<HugeiconsIcon icon={icon} className={className} />
 	);
+	AssetsPanelTabIcon.displayName = "AssetsPanelTabIcon";
+	return AssetsPanelTabIcon;
+}
 
 export const tabs = {
 	media: {
@@ -54,7 +55,7 @@ export const tabs = {
 	},
 	stickers: {
 		icon: createHugeiconsIcon({ icon: Happy01Icon }),
-		label: "ステッカー",
+		label: "素材",
 	},
 	effects: {
 		icon: createHugeiconsIcon({ icon: MagicWand05Icon }),
@@ -116,8 +117,7 @@ export const useAssetsPanelStore = create<AssetsPanelStore>()(
 			activeTab: "media",
 			setActiveTab: (tab) => set({ activeTab: tab }),
 			tabBarExpanded: false,
-			toggleTabBar: () =>
-				set((s) => ({ tabBarExpanded: !s.tabBarExpanded })),
+			toggleTabBar: () => set((s) => ({ tabBarExpanded: !s.tabBarExpanded })),
 			highlightMediaId: null,
 			requestRevealMedia: (mediaId) =>
 				set({ activeTab: "media", highlightMediaId: mediaId }),

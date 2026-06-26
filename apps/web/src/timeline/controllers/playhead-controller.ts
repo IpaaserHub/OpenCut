@@ -142,7 +142,12 @@ export class PlayheadController {
 
 	onRulerMouseDown(event: ReactMouseEvent): void {
 		if (event.button !== 0) return;
-		if (this.config.getPlayheadEl()?.contains(event.target as Node)) return;
+		if (
+			event.target instanceof Node &&
+			this.config.getPlayheadEl()?.contains(event.target)
+		) {
+			return;
+		}
 
 		event.preventDefault();
 		this.session = {
@@ -180,12 +185,22 @@ export class PlayheadController {
 	 * Updates the playhead position and auto-scrolls to keep the playhead
 	 * visible during playback.
 	 */
-	handlePlaybackUpdate(time: MediaTime): void {
+	handlePlaybackUpdate({
+		time,
+		forceScroll = false,
+	}: {
+		time: MediaTime;
+		forceScroll?: boolean;
+	}): void {
 		this.updatePlayheadLeft(time);
 
-		// Auto-scroll only during playback, not while scrubbing.
-		if (!this.config.getIsPlaying() || this.session.kind === "scrubbing")
+		// Auto-scroll during playback, and for explicit seeks such as start/end.
+		if (
+			(!forceScroll && !this.config.getIsPlaying()) ||
+			this.session.kind === "scrubbing"
+		) {
 			return;
+		}
 
 		const rulerViewport = this.config.getRulerScrollEl();
 		const tracksViewport = this.config.getTracksScrollEl();

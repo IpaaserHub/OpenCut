@@ -8,6 +8,7 @@ import { useKeyboardShortcutsHelp } from "@/actions/use-keyboard-shortcuts-help"
 import { EditableTimecode } from "@/components/editable-timecode";
 import { Button } from "@/components/ui/button";
 import {
+	ArrowRightDoubleIcon,
 	FullScreenIcon,
 	PauseIcon,
 	PlayIcon,
@@ -23,8 +24,6 @@ import {
 } from "@/components/ui/select";
 import { PREVIEW_ZOOM_PRESETS } from "@/preview/zoom";
 import { usePreviewViewport } from "./preview-viewport";
-import { GridPopover } from "./guide-popover";
-import { usePreviewStore } from "@/preview/preview-store";
 import {
 	Tooltip,
 	TooltipTrigger,
@@ -40,7 +39,7 @@ export function PreviewToolbar({
 	return (
 		<div className="grid grid-cols-[1fr_auto_1fr] items-center pb-3 pt-5 px-5">
 			<TimecodeDisplay />
-			<PlayPauseButton />
+			<PlaybackControls />
 			<div className="justify-self-end flex items-center gap-2.5">
 				<ZoomSelect />
 				<Separator orientation="vertical" className="h-4" />
@@ -108,7 +107,7 @@ function ZoomSelect() {
 	const { isAtFit, zoomPercent, fitToScreen, setViewportPercent } =
 		usePreviewViewport();
 
-	const displayLabel = isAtFit ? "Fit" : `${zoomPercent}%`;
+	const displayLabel = isAtFit ? "全体表示" : `${zoomPercent}%`;
 
 	const onValueChange = (value: string) => {
 		if (value === "fit") {
@@ -125,7 +124,7 @@ function ZoomSelect() {
 		>
 			<SelectTrigger className="tabular-nums">{displayLabel}</SelectTrigger>
 			<SelectContent>
-				<SelectItem value="fit">Fit</SelectItem>
+				<SelectItem value="fit">全体表示</SelectItem>
 				<SelectSeparator />
 				{PREVIEW_ZOOM_PRESETS.map((preset) => (
 					<SelectItem key={preset} value={String(preset)}>
@@ -137,13 +136,40 @@ function ZoomSelect() {
 	);
 }
 
+function PlaybackControls() {
+	return (
+		<div className="flex items-center justify-self-center gap-1">
+			<Button
+				variant="text"
+				size="icon"
+				aria-label="先頭へ移動"
+				title="先頭へ移動"
+				onClick={() => invokeAction("goto-start")}
+			>
+				<HugeiconsIcon icon={ArrowRightDoubleIcon} className="rotate-180" />
+			</Button>
+			<PlayPauseButton />
+			<Button
+				variant="text"
+				size="icon"
+				aria-label="末尾へ移動"
+				title="末尾へ移動"
+				onClick={() => invokeAction("goto-end")}
+			>
+				<HugeiconsIcon icon={ArrowRightDoubleIcon} />
+			</Button>
+		</div>
+	);
+}
+
 function PlayPauseButton() {
 	const isPlaying = useEditor((e) => e.playback.getIsPlaying());
 	const { shortcuts } = useKeyboardShortcutsHelp();
 	const shortcut = shortcuts.find((s) => s.action === "toggle-play");
+	const label = isPlaying ? "一時停止" : "再生";
 	const tooltipText = shortcut
-		? `Play/Pause (${shortcut.keys.join(" or ")})`
-		: "Play/Pause";
+		? `${label} (${shortcut.keys.join(" or ")})`
+		: label;
 
 	return (
 		<Tooltip delayDuration={200}>
@@ -151,6 +177,8 @@ function PlayPauseButton() {
 				<Button
 					variant="text"
 					size="icon"
+					aria-label={label}
+					title={label}
 					onClick={() => invokeAction("toggle-play")}
 				>
 					<HugeiconsIcon icon={isPlaying ? PauseIcon : PlayIcon} />

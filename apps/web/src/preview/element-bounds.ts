@@ -3,9 +3,7 @@ import type { MediaAsset } from "@/media/types";
 import { STICKER_INTRINSIC_SIZE_FALLBACK } from "@/stickers/intrinsic-size";
 import { DEFAULT_GRAPHIC_SOURCE_SIZE } from "@/graphics";
 import { measureTextElement } from "@/text/measure-element";
-import {
-	getElementLocalTime,
-} from "@/animation";
+import { getElementLocalTime } from "@/animation";
 import { resolveTransformAtTime } from "@/rendering/animation-values";
 import { buildTransformFromParams } from "@/rendering";
 
@@ -201,7 +199,7 @@ function getElementBounds({
 export const ROTATION_HANDLE_OFFSET = 24;
 
 export type Corner = "top-left" | "top-right" | "bottom-left" | "bottom-right";
-export type Edge = "right" | "left" | "bottom";
+export type Edge = "right" | "left" | "top" | "bottom";
 
 export function getCornerPosition({
 	bounds,
@@ -237,8 +235,10 @@ export function getEdgeHandlePosition({
 	const angleRad = (bounds.rotation * Math.PI) / 180;
 	const cos = Math.cos(angleRad);
 	const sin = Math.sin(angleRad);
-	const localX = edge === "right" ? halfWidth : edge === "left" ? -halfWidth : 0;
-	const localY = edge === "bottom" ? halfHeight : 0;
+	const localX =
+		edge === "right" ? halfWidth : edge === "left" ? -halfWidth : 0;
+	const localY =
+		edge === "top" ? -halfHeight : edge === "bottom" ? halfHeight : 0;
 	return {
 		x: bounds.cx + (localX * cos - localY * sin),
 		y: bounds.cy + (localX * sin + localY * cos),

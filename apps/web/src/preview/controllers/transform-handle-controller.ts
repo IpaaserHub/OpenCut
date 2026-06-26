@@ -11,7 +11,6 @@ import {
 	MIN_SCALE,
 	SNAP_THRESHOLD_SCREEN_PIXELS,
 	snapRotation,
-	snapScale,
 	snapScaleAxes,
 	type ScaleEdgePreference,
 	type SnapLine,
@@ -49,11 +48,11 @@ interface CornerScaleSession extends CapturedPointerState {
 	readonly elementId: string;
 	readonly initialTransform: Transform;
 	readonly initialParams: ParamValues;
-	readonly initialDistance: number;
 	readonly initialBoundsCx: number;
 	readonly initialBoundsCy: number;
 	readonly baseWidth: number;
 	readonly baseHeight: number;
+	readonly rotationRad: number;
 	readonly shouldClearScaleAnimation: boolean;
 	readonly animationsWithoutScale: ElementAnimations | undefined;
 }
@@ -161,7 +160,22 @@ function getPreferredEdge({ edge }: { edge: Edge }): ScaleEdgePreference {
 		? { right: true }
 		: edge === "left"
 			? { left: true }
-			: { bottom: true };
+			: edge === "top"
+				? { top: true }
+				: { bottom: true };
+}
+
+function getPreferredCornerEdges({
+	corner,
+}: {
+	corner: Corner;
+}): ScaleEdgePreference {
+	return {
+		left: corner === "top-left" || corner === "bottom-left",
+		right: corner === "top-right" || corner === "bottom-right",
+		top: corner === "top-left" || corner === "top-right",
+		bottom: corner === "bottom-left" || corner === "bottom-right",
+	};
 }
 
 function clampScaleNonZero(scale: number): number {
@@ -171,27 +185,171 @@ function clampScaleNonZero(scale: number): number {
 	return scale;
 }
 
-function getCornerDistance({
-	bounds,
-	corner,
+function isHorizontalEdge(edge: Edge): boolean {
+	return edge === "right" || edge === "left";
+}
+
+function getEdgeSign(edge: Edge): 1 | -1 {
+	return edge === "right" || edge === "bottom" ? 1 : -1;
+}
+
+function getAnchoredEdgePosition({
+	session,
+	scale,
 }: {
-	bounds: ElementBounds;
-	corner: Corner;
-}): number {
-	const halfWidth = bounds.width / 2;
-	const halfHeight = bounds.height / 2;
-	const angleRad = (bounds.rotation * Math.PI) / 180;
-	const cos = Math.cos(angleRad);
-	const sin = Math.sin(angleRad);
+	session: EdgeScaleSession;
+	scale: number;
+}): Point {
+	const sign = getEdgeSign(session.edge);
+	const horizontal = isHorizontalEdge(session.edge);
+	const baseSize = horizontal ? session.baseWidth : session.baseHeight;
+	const initialScale = horizontal
+		? session.initialTransform.scaleX
+		: session.initialTransform.scaleY;
+	const localCenterOffset = (sign * baseSize * (scale - initialScale)) / 2;
+	const cos = Math.cos(session.rotationRad);
+	const sin = Math.sin(session.rotationRad);
 
-	const localX =
-		corner === "top-left" || corner === "bottom-left" ? -halfWidth : halfWidth;
-	const localY =
-		corner === "top-left" || corner === "top-right" ? -halfHeight : halfHeight;
+	return {
+		x:
+			session.initialTransform.position.x +
+			(horizontal ? localCenterOffset * cos : -localCenterOffset * sin),
+		y:
+			session.initialTransform.position.y +
+			(horizontal ? localCenterOffset * sin : localCenterOffset * cos),
+	};
+}
 
-	const rotatedX = localX * cos - localY * sin;
-	const rotatedY = localX * sin + localY * cos;
-	return Math.sqrt(rotatedX * rotatedX + rotatedY * rotatedY) || 1;
+function getAabbEdgesForEdgeScale({
+	session,
+	scale,
+	position,
+}: {
+	session: EdgeScaleSession;
+	scale: number;
+	position: Point;
+}): Record<"left" | "right" | "top" | "bottom", number> {
+	const horizontal = isHorizontalEdge(session.edge);
+	const scaleX = horizontal ? scale : session.initialTransform.scaleX;
+	const scaleY = horizontal ? session.initialTransform.scaleY : scale;
+	const cosR = Math.abs(Math.cos(session.rotationRad));
+	const sinR = Math.abs(Math.sin(session.rotationRad));
+	const halfWidth =
+		(session.baseWidth * scaleX * cosR + session.baseHeight * scaleY * sinR) /
+		2;
+	const halfHeight =
+		(session.baseWidth * scaleX * sinR + session.baseHeight * scaleY * cosR) /
+		2;
+
+	return {
+		left: position.x - halfWidth,
+		right: position.x + halfWidth,
+		top: position.y - halfHeight,
+		bottom: position.y + halfHeight,
+	};
+}
+
+function snapAnchoredEdgeScale({
+	session,
+	proposedScale,
+	canvasSize,
+	snapThreshold,
+}: {
+	session: EdgeScaleSession;
+	proposedScale: number;
+	canvasSize: CanvasSize;
+	snapThreshold: Point;
+}): { snappedScale: number; activeLines: SnapLine[] } {
+	type ScaleEdge = "left" | "right" | "top" | "bottom";
+	type Candidate = {
+		scale: number;
+		distance: number;
+		line: SnapLine;
+		edge: ScaleEdge;
+	};
+
+	const preferredEdges = getPreferredEdge({ edge: session.edge });
+	const currentEdges = getAabbEdgesForEdgeScale({
+		session,
+		scale: proposedScale,
+		position: getAnchoredEdgePosition({ session, scale: proposedScale }),
+	});
+
+	function edgeAtScale({ scale, edge }: { scale: number; edge: ScaleEdge }) {
+		return getAabbEdgesForEdgeScale({
+			session,
+			scale,
+			position: getAnchoredEdgePosition({ session, scale }),
+		})[edge];
+	}
+
+	function solveScale({
+		edge,
+		target,
+	}: {
+		edge: ScaleEdge;
+		target: number;
+	}): number | null {
+		const edgeAtZero = edgeAtScale({ scale: 0, edge });
+		const edgeAtOne = edgeAtScale({ scale: 1, edge });
+		const slope = edgeAtOne - edgeAtZero;
+		if (Math.abs(slope) < 1e-6) return null;
+		return clampScaleNonZero((target - edgeAtZero) / slope);
+	}
+
+	const candidates: Candidate[] = [];
+	const addCandidate = ({
+		edge,
+		target,
+		line,
+		threshold,
+	}: {
+		edge: ScaleEdge;
+		target: number;
+		line: SnapLine;
+		threshold: number;
+	}) => {
+		const distance = Math.abs(currentEdges[edge] - target);
+		if (distance > threshold) return;
+		const scale = solveScale({ edge, target });
+		if (scale === null || Math.abs(scale) <= MIN_SCALE) return;
+		candidates.push({ scale, distance, line, edge });
+	};
+
+	for (const target of [-canvasSize.width / 2, 0, canvasSize.width / 2]) {
+		const line: SnapLine = { type: "vertical", position: target };
+		addCandidate({ edge: "left", target, line, threshold: snapThreshold.x });
+		addCandidate({ edge: "right", target, line, threshold: snapThreshold.x });
+	}
+
+	for (const target of [-canvasSize.height / 2, 0, canvasSize.height / 2]) {
+		const line: SnapLine = { type: "horizontal", position: target };
+		addCandidate({ edge: "top", target, line, threshold: snapThreshold.y });
+		addCandidate({ edge: "bottom", target, line, threshold: snapThreshold.y });
+	}
+
+	const best = candidates.reduce<Candidate | null>(
+		(bestCandidate, candidate) => {
+			if (!bestCandidate) return candidate;
+			if (candidate.distance < bestCandidate.distance) return candidate;
+			if (candidate.distance > bestCandidate.distance) return bestCandidate;
+			const shouldPreferCandidate = preferredEdges[candidate.edge] === true;
+			const shouldPreferBest = preferredEdges[bestCandidate.edge] === true;
+			return shouldPreferCandidate && !shouldPreferBest
+				? candidate
+				: bestCandidate;
+		},
+		null,
+	);
+
+	if (!best) {
+		return { snappedScale: proposedScale, activeLines: [] };
+	}
+
+	return {
+		snappedScale: best.scale,
+		activeLines: [best.line],
+	};
 }
 
 function buildSelectedWithBounds({
@@ -361,6 +519,7 @@ export class TransformHandleController {
 		if (!context) return;
 
 		event.stopPropagation();
+		if (!(event.currentTarget instanceof HTMLElement)) return;
 
 		const { shouldClearScaleAnimation, animationsWithoutScale } =
 			buildCornerScaleAnimationReset({
@@ -374,19 +533,16 @@ export class TransformHandleController {
 			elementId: context.elementId,
 			initialTransform: context.resolvedTransform,
 			initialParams: context.element.params,
-			initialDistance: getCornerDistance({
-				bounds: context.bounds,
-				corner,
-			}),
 			initialBoundsCx: context.bounds.cx,
 			initialBoundsCy: context.bounds.cy,
 			baseWidth: context.bounds.width / context.resolvedTransform.scaleX,
 			baseHeight: context.bounds.height / context.resolvedTransform.scaleY,
+			rotationRad: (context.bounds.rotation * Math.PI) / 180,
 			shouldClearScaleAnimation,
 			animationsWithoutScale,
 			pointerId: event.pointerId,
 			captureTarget: this.capturePointer({
-				target: event.currentTarget as HTMLElement,
+				target: event.currentTarget,
 				pointerId: event.pointerId,
 			}),
 		};
@@ -399,6 +555,7 @@ export class TransformHandleController {
 		if (!context) return;
 
 		event.stopPropagation();
+		if (!(event.currentTarget instanceof HTMLElement)) return;
 
 		const position = this.deps.viewport.screenToCanvas({
 			clientX: event.clientX,
@@ -421,7 +578,7 @@ export class TransformHandleController {
 			initialBoundsCy: context.bounds.cy,
 			pointerId: event.pointerId,
 			captureTarget: this.capturePointer({
-				target: event.currentTarget as HTMLElement,
+				target: event.currentTarget,
 				pointerId: event.pointerId,
 			}),
 		};
@@ -440,6 +597,7 @@ export class TransformHandleController {
 		if (!context) return;
 
 		event.stopPropagation();
+		if (!(event.currentTarget instanceof HTMLElement)) return;
 
 		const { shouldClearScaleAnimation, animationsWithoutScale } =
 			buildEdgeScaleAnimationReset({
@@ -463,7 +621,7 @@ export class TransformHandleController {
 			animationsWithoutScale,
 			pointerId: event.pointerId,
 			captureTarget: this.capturePointer({
-				target: event.currentTarget as HTMLElement,
+				target: event.currentTarget,
 				pointerId: event.pointerId,
 			}),
 		};
@@ -586,93 +744,24 @@ export class TransformHandleController {
 	}): void {
 		const deltaX = position.x - session.initialBoundsCx;
 		const deltaY = position.y - session.initialBoundsCy;
-		const currentDistance = Math.sqrt(deltaX * deltaX + deltaY * deltaY) || 1;
-		const scaleFactor = currentDistance / session.initialDistance;
-
-		// Use actual element dimensions (base * current scale) so snapping is
-		// computed from the rendered geometry when scaleX != scaleY.
-		const effectiveWidth = session.baseWidth * session.initialTransform.scaleX;
-		const effectiveHeight =
-			session.baseHeight * session.initialTransform.scaleY;
-
-		const snapThreshold = this.deps.viewport.screenPixelsToLogicalThreshold({
-			screenPixels: SNAP_THRESHOLD_SCREEN_PIXELS,
-		});
-		const { snappedScale, activeLines } = this.deps.input.isShiftHeld()
-			? { snappedScale: scaleFactor, activeLines: [] as SnapLine[] }
-			: snapScale({
-					proposedScale: scaleFactor,
-					position: session.initialTransform.position,
-					baseWidth: effectiveWidth,
-					baseHeight: effectiveHeight,
-					rotation: session.initialTransform.rotate,
-					canvasSize: this.deps.scene.getCanvasSize(),
-					snapThreshold,
-				});
-
-		this.deps.preview.onSnapLinesChange?.(activeLines);
-
-		this.deps.timeline.previewElements([
-			{
-				trackId: session.trackId,
-				elementId: session.elementId,
-				updates: {
-					params: buildParamsWithTransform({
-						params: session.initialParams,
-						transform: {
-							...session.initialTransform,
-							scaleX: clampScaleNonZero(
-								session.initialTransform.scaleX * snappedScale,
-							),
-							scaleY: clampScaleNonZero(
-								session.initialTransform.scaleY * snappedScale,
-							),
-						},
-					}),
-					...(session.shouldClearScaleAnimation && {
-						animations: session.animationsWithoutScale,
-					}),
-				},
-			},
-		]);
-	}
-
-	private previewEdgeScale({
-		session,
-		position,
-	}: {
-		session: EdgeScaleSession;
-		position: Point;
-	}): void {
-		const deltaX = position.x - session.initialBoundsCx;
-		const deltaY = position.y - session.initialBoundsCy;
 		const xProjection =
 			deltaX * Math.cos(session.rotationRad) +
 			deltaY * Math.sin(session.rotationRad);
 		const yProjection =
 			-deltaX * Math.sin(session.rotationRad) +
 			deltaY * Math.cos(session.rotationRad);
-		const projection =
-			session.edge === "right"
-				? xProjection
-				: session.edge === "left"
-					? -xProjection
-					: yProjection;
-
-		const baseAxisHalf =
-			session.edge === "right" || session.edge === "left"
-				? session.baseWidth / 2
-				: session.baseHeight / 2;
-		const proposedScale = clampScaleNonZero(projection / baseAxisHalf);
-
-		const proposedScaleX =
-			session.edge === "right" || session.edge === "left"
-				? proposedScale
-				: session.initialTransform.scaleX;
-		const proposedScaleY =
-			session.edge === "bottom"
-				? proposedScale
-				: session.initialTransform.scaleY;
+		const xSign =
+			session.corner === "top-left" || session.corner === "bottom-left"
+				? -1
+				: 1;
+		const ySign =
+			session.corner === "top-left" || session.corner === "top-right" ? -1 : 1;
+		const proposedScaleX = clampScaleNonZero(
+			(xProjection * xSign) / (session.baseWidth / 2 || 1),
+		);
+		const proposedScaleY = clampScaleNonZero(
+			(yProjection * ySign) / (session.baseHeight / 2 || 1),
+		);
 
 		const snapThreshold = this.deps.viewport.screenPixelsToLogicalThreshold({
 			screenPixels: SNAP_THRESHOLD_SCREEN_PIXELS,
@@ -699,12 +788,15 @@ export class TransformHandleController {
 					rotation: session.initialTransform.rotate,
 					canvasSize: this.deps.scene.getCanvasSize(),
 					snapThreshold,
-					preferredEdges: getPreferredEdge({ edge: session.edge }),
+					preferredEdges: getPreferredCornerEdges({
+						corner: session.corner,
+					}),
 				});
 
-		const relevantSnap =
-			session.edge === "right" || session.edge === "left" ? xSnap : ySnap;
-		this.deps.preview.onSnapLinesChange?.(relevantSnap.activeLines);
+		this.deps.preview.onSnapLinesChange?.([
+			...xSnap.activeLines,
+			...ySnap.activeLines,
+		]);
 
 		this.deps.timeline.previewElements([
 			{
@@ -715,14 +807,120 @@ export class TransformHandleController {
 						params: session.initialParams,
 						transform: {
 							...session.initialTransform,
-							scaleX:
-								session.edge === "right" || session.edge === "left"
-									? xSnap.snappedScale
-									: session.initialTransform.scaleX,
-							scaleY:
-								session.edge === "bottom"
-									? ySnap.snappedScale
-									: session.initialTransform.scaleY,
+							scaleX: xSnap.snappedScale,
+							scaleY: ySnap.snappedScale,
+						},
+					}),
+					...(session.shouldClearScaleAnimation && {
+						animations: session.animationsWithoutScale,
+					}),
+				},
+			},
+		]);
+	}
+
+	private previewEdgeScale({
+		session,
+		position,
+	}: {
+		session: EdgeScaleSession;
+		position: Point;
+	}): void {
+		const deltaX = position.x - session.initialBoundsCx;
+		const deltaY = position.y - session.initialBoundsCy;
+		const xProjection =
+			deltaX * Math.cos(session.rotationRad) +
+			deltaY * Math.sin(session.rotationRad);
+		const yProjection =
+			-deltaX * Math.sin(session.rotationRad) +
+			deltaY * Math.cos(session.rotationRad);
+		const horizontal = isHorizontalEdge(session.edge);
+		const edgeSign = getEdgeSign(session.edge);
+		const axisProjection = horizontal ? xProjection : yProjection;
+		const baseAxisSize = horizontal ? session.baseWidth : session.baseHeight;
+		const initialScale = horizontal
+			? session.initialTransform.scaleX
+			: session.initialTransform.scaleY;
+		const shouldResizeFromCenter = this.deps.input.isShiftHeld();
+		const proposedScale = clampScaleNonZero(
+			shouldResizeFromCenter
+				? (edgeSign * axisProjection) / (baseAxisSize / 2 || 1)
+				: (edgeSign *
+						(axisProjection + (edgeSign * baseAxisSize * initialScale) / 2)) /
+						baseAxisSize,
+		);
+
+		const proposedScaleX = horizontal
+			? proposedScale
+			: session.initialTransform.scaleX;
+		const proposedScaleY = horizontal
+			? session.initialTransform.scaleY
+			: proposedScale;
+
+		const snapThreshold = this.deps.viewport.screenPixelsToLogicalThreshold({
+			screenPixels: SNAP_THRESHOLD_SCREEN_PIXELS,
+		});
+		const { x: xSnap, y: ySnap } = shouldResizeFromCenter
+			? {
+					x: {
+						snappedScale: proposedScaleX,
+						snapDistance: Infinity,
+						activeLines: [] as SnapLine[],
+					},
+					y: {
+						snappedScale: proposedScaleY,
+						snapDistance: Infinity,
+						activeLines: [] as SnapLine[],
+					},
+				}
+			: (() => {
+					const snap = snapAnchoredEdgeScale({
+						session,
+						proposedScale,
+						canvasSize: this.deps.scene.getCanvasSize(),
+						snapThreshold,
+					});
+					return {
+						x: {
+							snappedScale: horizontal
+								? snap.snappedScale
+								: session.initialTransform.scaleX,
+							snapDistance: Infinity,
+							activeLines: horizontal ? snap.activeLines : [],
+						},
+						y: {
+							snappedScale: horizontal
+								? session.initialTransform.scaleY
+								: snap.snappedScale,
+							snapDistance: Infinity,
+							activeLines: horizontal ? [] : snap.activeLines,
+						},
+					};
+				})();
+
+		const relevantSnap = horizontal ? xSnap : ySnap;
+		this.deps.preview.onSnapLinesChange?.(relevantSnap.activeLines);
+		const finalScale = horizontal ? xSnap.snappedScale : ySnap.snappedScale;
+		const finalPosition = shouldResizeFromCenter
+			? session.initialTransform.position
+			: getAnchoredEdgePosition({ session, scale: finalScale });
+
+		this.deps.timeline.previewElements([
+			{
+				trackId: session.trackId,
+				elementId: session.elementId,
+				updates: {
+					params: buildParamsWithTransform({
+						params: session.initialParams,
+						transform: {
+							...session.initialTransform,
+							position: finalPosition,
+							scaleX: horizontal
+								? xSnap.snappedScale
+								: session.initialTransform.scaleX,
+							scaleY: horizontal
+								? session.initialTransform.scaleY
+								: ySnap.snappedScale,
 						},
 					}),
 					...(session.shouldClearScaleAnimation && {

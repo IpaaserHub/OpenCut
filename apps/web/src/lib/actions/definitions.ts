@@ -1,7 +1,4 @@
-import type {
-	KeybindingConfig,
-	ShortcutKey,
-} from "@/lib/actions/keybinding";
+import type { KeybindingConfig, ShortcutKey } from "@/lib/actions/keybinding";
 import type { TActionWithOptionalArgs } from "./types";
 
 export type TActionCategory =
@@ -26,124 +23,124 @@ export interface TActionDefinition extends TActionBaseDefinition {
 
 export const ACTIONS = {
 	"toggle-play": {
-		description: "Play/Pause",
+		description: "再生/一時停止",
 		category: "playback",
 	},
 	"stop-playback": {
-		description: "Stop playback",
+		description: "再生を停止",
 		category: "playback",
 	},
 	"seek-forward": {
-		description: "Seek forward 1 second",
+		description: "1秒進む",
 		category: "playback",
 		args: { seconds: "number" },
 	},
 	"seek-backward": {
-		description: "Seek backward 1 second",
+		description: "1秒戻る",
 		category: "playback",
 		args: { seconds: "number" },
 	},
 	"frame-step-forward": {
-		description: "Frame step forward",
+		description: "1フレーム進む",
 		category: "navigation",
 	},
 	"frame-step-backward": {
-		description: "Frame step backward",
+		description: "1フレーム戻る",
 		category: "navigation",
 	},
 	"jump-forward": {
-		description: "Jump forward 5 seconds",
+		description: "5秒進む",
 		category: "navigation",
 		args: { seconds: "number" },
 	},
 	"jump-backward": {
-		description: "Jump backward 5 seconds",
+		description: "5秒戻る",
 		category: "navigation",
 		args: { seconds: "number" },
 	},
 	"goto-start": {
-		description: "Go to timeline start",
+		description: "タイムラインの先頭へ移動",
 		category: "navigation",
 	},
 	"goto-end": {
-		description: "Go to timeline end",
+		description: "タイムラインの末尾へ移動",
 		category: "navigation",
 	},
 	split: {
-		description: "Split elements at playhead",
+		description: "再生ヘッド位置で要素を分割",
 		category: "editing",
 	},
 	"split-left": {
-		description: "Split and remove left",
+		description: "分割して左側を削除",
 		category: "editing",
 	},
 	"split-right": {
-		description: "Split and remove right",
+		description: "分割して右側を削除",
 		category: "editing",
 	},
 	"delete-selected": {
-		description: "Delete selected elements",
+		description: "選択中の要素を削除",
 		category: "editing",
 	},
 	"copy-selected": {
-		description: "Copy selected elements",
+		description: "選択中の要素をコピー",
 		category: "editing",
 	},
 	"paste-copied": {
-		description: "Paste elements at playhead",
+		description: "再生ヘッド位置に貼り付け",
 		category: "editing",
 	},
 	"toggle-snapping": {
-		description: "Toggle snapping",
+		description: "スナップを切り替え",
 		category: "editing",
 	},
 	"toggle-ripple-editing": {
-		description: "Toggle ripple editing",
+		description: "リップル編集を切り替え",
 		category: "editing",
 	},
 	"select-all": {
-		description: "Select all elements",
+		description: "すべての要素を選択",
 		category: "selection",
 	},
 	"cancel-interaction": {
-		description: "Cancel current interaction",
+		description: "現在の操作をキャンセル",
 		category: "controls",
 	},
 	"deselect-all": {
-		description: "Deselect all elements",
+		description: "すべての選択を解除",
 		category: "selection",
 	},
 	"duplicate-selected": {
-		description: "Duplicate selected element",
+		description: "選択中の要素を複製",
 		category: "selection",
 	},
 	"toggle-elements-muted-selected": {
-		description: "Mute/unmute selected elements",
+		description: "選択中の要素のミュートを切り替え",
 		category: "selection",
 	},
 	"toggle-elements-visibility-selected": {
-		description: "Show/hide selected elements",
+		description: "選択中の要素の表示を切り替え",
 		category: "selection",
 	},
 	"toggle-bookmark": {
-		description: "Toggle bookmark at playhead",
+		description: "再生ヘッド位置のブックマークを切り替え",
 		category: "timeline",
 	},
 	undo: {
-		description: "Undo",
+		description: "元に戻す",
 		category: "history",
 	},
 	redo: {
-		description: "Redo",
+		description: "やり直す",
 		category: "history",
 	},
 	"remove-media-asset": {
-		description: "Remove media asset",
+		description: "メディア素材を削除",
 		category: "assets",
 		args: { projectId: "string", assetId: "string" },
 	},
 	"remove-media-assets": {
-		description: "Remove media assets",
+		description: "メディア素材を削除",
 		category: "assets",
 		args: { projectId: "string", assetIds: "string[]" },
 	},
@@ -173,7 +170,9 @@ const ACTION_DEFAULT_SHORTCUTS = {
 	"duplicate-selected": ["ctrl+d"],
 	undo: ["ctrl+z"],
 	redo: ["ctrl+shift+z", "ctrl+y"],
-} as const satisfies Partial<Record<TActionWithOptionalArgs, readonly ShortcutKey[]>>;
+} as const satisfies Partial<
+	Record<TActionWithOptionalArgs, readonly ShortcutKey[]>
+>;
 
 const ACTION_DEFAULT_SHORTCUTS_BY_ACTION: Partial<
 	Record<TAction, readonly ShortcutKey[]>

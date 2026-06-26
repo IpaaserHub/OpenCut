@@ -242,11 +242,19 @@ export function useTimelinePlayhead({
 	}, [editor.playback, rulerScrollRef, updatePlayheadLeft]);
 
 	useEffect(() => {
-		const handlePlaybackUpdate = (e: Event) => {
-			const time = (e as CustomEvent<{ time: number }>).detail.time;
+		const handlePlaybackUpdate = ({
+			event,
+			forceScroll = false,
+		}: {
+			event: Event;
+			forceScroll?: boolean;
+		}) => {
+			const time = (event as CustomEvent<{ time: number }>).detail.time;
 			updatePlayheadLeft(time);
 
-			if (!isPlayingRef.current || isScrubbingRef.current) return;
+			if ((!forceScroll && !isPlayingRef.current) || isScrubbingRef.current) {
+				return;
+			}
 			const rulerViewport = rulerScrollRef.current;
 			const tracksViewport = tracksScrollRef.current;
 			if (!rulerViewport || !tracksViewport) return;
@@ -272,14 +280,20 @@ export function useTimelinePlayhead({
 
 		const initialTime = editor.playback.getCurrentTime();
 		handlePlaybackUpdate({
-			detail: { time: initialTime },
-		} as CustomEvent<{ time: number }>);
+			event: {
+				detail: { time: initialTime },
+			} as CustomEvent<{ time: number }>,
+		});
 
-		window.addEventListener("playback-update", handlePlaybackUpdate);
-		window.addEventListener("playback-seek", handlePlaybackUpdate);
+		const onPlaybackUpdate = (event: Event) => handlePlaybackUpdate({ event });
+		const onPlaybackSeek = (event: Event) =>
+			handlePlaybackUpdate({ event, forceScroll: true });
+
+		window.addEventListener("playback-update", onPlaybackUpdate);
+		window.addEventListener("playback-seek", onPlaybackSeek);
 		return () => {
-			window.removeEventListener("playback-update", handlePlaybackUpdate);
-			window.removeEventListener("playback-seek", handlePlaybackUpdate);
+			window.removeEventListener("playback-update", onPlaybackUpdate);
+			window.removeEventListener("playback-seek", onPlaybackSeek);
 		};
 	}, [editor.playback, rulerScrollRef, tracksScrollRef, updatePlayheadLeft]);
 

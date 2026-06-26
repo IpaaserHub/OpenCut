@@ -25,9 +25,7 @@ import type {
 } from "@/lib/stickers";
 import { useStickersStore } from "@/stores/stickers-store";
 import { cn } from "@/utils/ui";
-import {
-	HappyIcon,
-} from "@hugeicons/core-free-icons";
+import { HappyIcon } from "@hugeicons/core-free-icons";
 import { HugeiconsIcon } from "@hugeicons/react";
 
 export function StickersView() {
@@ -54,7 +52,7 @@ export function StickersView() {
 				<Input
 					size="sm"
 					variant="default"
-					placeholder="Search..."
+					placeholder="検索..."
 					value={searchQuery}
 					onChange={(e) => {
 						setSearchQuery({ query: e.target.value });
@@ -74,7 +72,7 @@ export function StickersView() {
 				<div className="border-b border-border px-2">
 					<div
 						role="tablist"
-						aria-label="Sticker categories"
+						aria-label="素材カテゴリ"
 						className="text-muted-foreground inline-flex h-auto items-center gap-0 bg-transparent p-0"
 					>
 						{Object.entries(STICKER_CATEGORIES).map(([key, label]) => {
@@ -156,7 +154,7 @@ function EmptyView({ message }: { message: string }) {
 				className="text-muted-foreground size-10"
 			/>
 			<div className="flex flex-col gap-2 text-center">
-				<p className="text-lg font-medium">No stickers found</p>
+				<p className="text-lg font-medium">素材が見つかりません</p>
 				<p className="text-muted-foreground text-sm text-balance">{message}</p>
 			</div>
 		</div>
@@ -220,7 +218,7 @@ function StickersContentView() {
 					{isRegionSearch && <RegionBanner region={regionLabel} />}
 					<div className="flex items-center justify-between">
 						<span className="text-muted-foreground text-sm">
-							{searchResults.total} results
+							{searchResults.total} 件
 						</span>
 					</div>
 					<StickerGrid items={searchResults.items} />
@@ -230,7 +228,11 @@ function StickersContentView() {
 
 		// "all" tab search — sections are in browseContent, fall through to section rendering below
 		if (selectedCategory !== "all" && searchQuery) {
-			return <EmptyView message={`No stickers found for "${searchQuery}"`} />;
+			return (
+				<EmptyView
+					message={`「${searchQuery}」に一致する素材は見つかりませんでした`}
+				/>
+			);
 		}
 	}
 
@@ -248,10 +250,10 @@ function StickersContentView() {
 			<EmptyView
 				message={
 					viewMode === "search"
-						? `No stickers found for "${searchQuery}"`
+						? `「${searchQuery}」に一致する素材は見つかりませんでした`
 						: selectedCategory === "all"
-							? "No stickers available yet."
-							: `No stickers available in ${categoryLabel.toLowerCase()} yet.`
+							? "利用できる素材はまだありません。"
+							: `${categoryLabel.toLowerCase()} で利用できる素材はまだありません。`
 				}
 			/>
 		);
@@ -303,7 +305,7 @@ function StickerSection({
 								size="sm"
 								className="h-auto gap-1 p-0 text-xs text-muted-foreground"
 							>
-								Clear
+								クリア
 							</Button>
 						)}
 
@@ -316,7 +318,7 @@ function StickerSection({
 									onSeeAll(section.action?.category as StickerCategory);
 								}}
 							>
-								See all
+								すべて表示
 							</Button>
 						)}
 					</div>
@@ -358,7 +360,9 @@ function StickerItem({
 
 	const displayName = item.name;
 	const shapePreset =
-		item.provider === "shapes" ? parseShapeStickerId({ stickerId: item.id }) : null;
+		item.provider === "shapes"
+			? parseShapeStickerId({ stickerId: item.id })
+			: null;
 
 	const handleAdd = async () => {
 		setIsAdding(true);
@@ -394,8 +398,8 @@ function StickerItem({
 
 			addToRecentStickers({ stickerId: item.id });
 		} catch (error) {
-			console.error("Failed to add sticker:", error);
-			toast.error("Failed to add sticker to timeline");
+			console.error("Failed to add asset:", error);
+			toast.error("素材をタイムラインに追加できませんでした");
 		} finally {
 			setIsAdding(false);
 		}

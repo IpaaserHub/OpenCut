@@ -1,12 +1,26 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+	useCallback,
+	useEffect,
+	useMemo,
+	useRef,
+	useState,
+	useSyncExternalStore,
+} from "react";
 import useDeepCompareEffect from "use-deep-compare-effect";
 import { useEditor } from "@/editor/use-editor";
 import { useRafLoop } from "@/hooks/use-raf-loop";
 import { useContainerSize } from "@/hooks/use-container-size";
 import { useFullscreen } from "@/hooks/use-fullscreen";
 import { CanvasRenderer } from "@/services/renderer/canvas-renderer";
+import {
+	getRenderCrashMessage,
+	reportRenderFailure,
+	reportRenderSuccess,
+	subscribeRenderCrash,
+} from "@/services/renderer/render-health";
+import { Button } from "@/components/ui/button";
 import { TICKS_PER_SECOND } from "@/wasm";
 import type { RootNode } from "@/services/renderer/nodes/root-node";
 import { buildScene } from "@/services/renderer/scene-builder";
@@ -147,6 +161,11 @@ function PreviewCanvas({
 	const editor = useEditor();
 	const activeProject = useEditor((e) => e.project.getActive());
 	const renderTree = useEditor((e) => e.renderer.getRenderTree());
+	const renderCrashMessage = useSyncExternalStore(
+		subscribeRenderCrash,
+		getRenderCrashMessage,
+		() => null,
+	);
 	const viewport = usePreviewViewportState({
 		canvasHeight: nativeHeight,
 		canvasWidth: nativeWidth,
@@ -170,7 +189,16 @@ function PreviewCanvas({
 	useEffect(() => {
 		const mount = canvasMountRef.current;
 		if (!mount) return;
-		const outputCanvas = renderer.getOutputCanvas();
+		let outputCanvas: HTMLCanvasElement;
+		try {
+			outputCanvas = renderer.getOutputCanvas();
+		} catch (error) {
+			// getOutputCanvas resizes the wasm compositor; when the wasm
+			// instance is poisoned this throws. Swallowing it here keeps one
+			// dead preview from unmounting the whole editor.
+			reportRenderFailure({ error });
+			return;
+		}
 		outputCanvas.style.display = "block";
 		outputCanvas.style.width = "100%";
 		outputCanvas.style.height = "100%";
@@ -184,6 +212,9 @@ function PreviewCanvas({
 
 	const render = useCallback(() => {
 		if (!renderTree || renderingRef.current) return;
+		// A poisoned wasm instance fails on every call; stop feeding it frames
+		// (the crash overlay below tells the user to reload).
+		if (getRenderCrashMessage() !== null) return;
 
 		const renderTime = Math.min(
 			editor.playback.getCurrentTime(),
@@ -208,6 +239,15 @@ function PreviewCanvas({
 			.render({ node: renderTree, time: renderTime })
 			.then(() => {
 				renderingRef.current = false;
+				reportRenderSuccess();
+			})
+			.catch((error: unknown) => {
+				// Without this catch a single failed render left renderingRef
+				// stuck true and froze the preview forever on a white canvas.
+				renderingRef.current = false;
+				lastFrameRef.current = -1;
+				lastSceneRef.current = null;
+				reportRenderFailure({ error });
 			});
 	}, [renderer, renderTree, editor.playback, editor.timeline]);
 
@@ -331,6 +371,23 @@ function PreviewCanvas({
 									instances={overlayInstances}
 									plane="over-interaction"
 								/>
+								{renderCrashMessage !== null ? (
+									<div className="absolute inset-0 z-50 flex flex-col items-center justify-center gap-3 bg-black/70 p-4 text-center text-white">
+										<p className="text-sm font-medium">
+											プレビューの描画が停止しました
+										</p>
+										<p className="text-muted max-w-md text-xs opacity-80">
+											GPUエラーによりプレビューを再開できません。ページを再読み込みしてください（編集内容は保存されています）。
+										</p>
+										<Button
+											variant="outline"
+											size="sm"
+											onClick={() => window.location.reload()}
+										>
+											再読み込み
+										</Button>
+									</div>
+								) : null}
 							</div>
 						</ContextMenuTrigger>
 						<PreviewContextMenu

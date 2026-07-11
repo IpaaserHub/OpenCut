@@ -19,6 +19,15 @@ thread_local! {
     static GPU_RUNTIME: RefCell<Option<GpuRuntime>> = const { RefCell::new(None) };
 }
 
+// See compositor_runtime_unavailable() in compositor.rs: a panic mid-borrow
+// permanently poisons the RefCell, and try_borrow* keeps later calls from
+// escalating that into a second panic.
+fn gpu_runtime_unavailable() -> JsValue {
+    JsValue::from_str(
+        "GPU runtime is unavailable (poisoned by a previous GPU panic). Reload the page to recover.",
+    )
+}
+
 fn set_panic_hook() {
     static SET_HOOK: std::sync::Once = std::sync::Once::new();
     SET_HOOK.call_once(|| {
@@ -41,7 +50,12 @@ fn set_panic_hook() {
 pub async fn initialize_gpu() -> Result<(), JsValue> {
     set_panic_hook();
 
-    if GPU_RUNTIME.with(|runtime| runtime.borrow().is_some()) {
+    if GPU_RUNTIME.with(|runtime| {
+        runtime
+            .try_borrow()
+            .map(|borrow| borrow.is_some())
+            .unwrap_or(true)
+    }) {
         return Ok(());
     }
 
@@ -52,21 +66,25 @@ pub async fn initialize_gpu() -> Result<(), JsValue> {
     let masks = MaskFeatherPipeline::new(&context);
 
     GPU_RUNTIME.with(|runtime| {
-        runtime.replace(Some(GpuRuntime {
+        let mut borrow = runtime
+            .try_borrow_mut()
+            .map_err(|_| gpu_runtime_unavailable())?;
+        *borrow = Some(GpuRuntime {
             context,
             effects,
             masks,
-        }));
-    });
-
-    Ok(())
+        });
+        Ok(())
+    })
 }
 
 pub(crate) fn with_gpu_runtime<T>(
     action: impl FnOnce(&GpuRuntime) -> Result<T, JsValue>,
 ) -> Result<T, JsValue> {
     GPU_RUNTIME.with(|runtime| {
-        let borrow = runtime.borrow();
+        let borrow = runtime
+            .try_borrow()
+            .map_err(|_| gpu_runtime_unavailable())?;
         let Some(gpu_runtime) = borrow.as_ref() else {
             return Err(JsValue::from_str(
                 "GPU context not initialized. Call initializeGpu() first.",

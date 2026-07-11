@@ -7,15 +7,23 @@ import type {
 	VideoTrack,
 } from "@/timeline";
 
-mock.module("opencut-wasm", () => ({
-	TICKS_PER_SECOND: () => 1,
+// Timeline tests express positions in tiny raw ticks (1 tick = 1 second), so
+// stub the tick lattice instead of using the real 120000-ticks/s constants.
+mock.module("@/wasm/time-math", () => ({
+	TICKS_PER_SECOND: 1,
 	mediaTimeFromSeconds: ({ seconds }: { seconds: number }) =>
 		Math.round(seconds),
 	mediaTimeToSeconds: ({ time }: { time: number }) => time,
 	roundToFrame: ({ time }: { time: number }) => time,
+	floorToFrame: ({ time }: { time: number }) => time,
+	isFrameAligned: () => true,
+	mediaTimeFromFrame: ({ frame }: { frame: number }) => frame,
 	snappedSeekTime: ({ time }: { time: number }) => time,
 	lastFrameTime: ({ duration }: { duration: number }) => duration,
 	parseTimecode: () => null,
+	formatTimecode: () => "",
+	guessTimecodeFormat: () => undefined,
+	ticksPerFrame: () => 1,
 }));
 
 const [{ findTrackGaps, closeTrackGap }, { mediaTime, ZERO_MEDIA_TIME }] =
@@ -168,7 +176,7 @@ describe("track gaps", () => {
 		// a unchanged; b and c each pulled left by 5.
 		expect(
 			updated.overlay[0].elements.map((element) => element.startTime),
-		).toEqual([0, 10, 25]);
+		).toEqual([0, 10, 25].map((ticks) => mediaTime({ ticks })));
 
 		// The second gap (between b-end 15 and c-start 25) still exists.
 		expect(findTrackGaps({ track: updated.overlay[0] })).toEqual([
@@ -179,8 +187,8 @@ describe("track gaps", () => {
 		]);
 
 		// The video track is untouched.
-		expect(updated.main.elements.map((element) => element.startTime)).toEqual([
-			12,
-		]);
+		expect(updated.main.elements.map((element) => element.startTime)).toEqual(
+			[12].map((ticks) => mediaTime({ ticks })),
+		);
 	});
 });

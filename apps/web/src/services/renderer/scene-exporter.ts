@@ -13,7 +13,7 @@ import {
 	QUALITY_VERY_HIGH,
 } from "mediabunny";
 import type { FrameRate } from "opencut-wasm";
-import { mediaTimeToSeconds } from "opencut-wasm";
+import { mediaTimeToSeconds } from "@/wasm/time-math";
 import { TICKS_PER_SECOND } from "@/wasm";
 import { frameRateToFloat } from "@/fps/utils";
 import type { RootNode } from "./nodes/root-node";

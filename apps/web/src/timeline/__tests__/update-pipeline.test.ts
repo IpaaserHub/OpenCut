@@ -1,8 +1,30 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
 import type { Transform } from "@/rendering";
 import type { SceneTracks, VideoElement } from "@/timeline";
-import { applyElementUpdate } from "@/timeline/update-pipeline";
-import { mediaTime, ZERO_MEDIA_TIME } from "@/wasm";
+
+// Timeline tests express positions in tiny raw ticks (1 tick = 1 second), so
+// stub the tick lattice instead of using the real 120000-ticks/s constants.
+// Every timeline test file registers this same mock before importing "@/wasm"
+// so combined runs are order-independent (bun caches modules per process).
+mock.module("@/wasm/time-math", () => ({
+	TICKS_PER_SECOND: 1,
+	mediaTimeFromSeconds: ({ seconds }: { seconds: number }) =>
+		Math.round(seconds),
+	mediaTimeToSeconds: ({ time }: { time: number }) => time,
+	roundToFrame: ({ time }: { time: number }) => time,
+	floorToFrame: ({ time }: { time: number }) => time,
+	isFrameAligned: () => true,
+	mediaTimeFromFrame: ({ frame }: { frame: number }) => frame,
+	snappedSeekTime: ({ time }: { time: number }) => time,
+	lastFrameTime: ({ duration }: { duration: number }) => duration,
+	parseTimecode: () => null,
+	formatTimecode: () => "",
+	guessTimecodeFormat: () => undefined,
+	ticksPerFrame: () => 1,
+}));
+
+const [{ applyElementUpdate }, { mediaTime, ZERO_MEDIA_TIME }] =
+	await Promise.all([import("@/timeline/update-pipeline"), import("@/wasm")]);
 
 function buildTransform(): Transform {
 	return {
@@ -66,7 +88,7 @@ describe("applyElementUpdate", () => {
 			},
 		});
 
-		expect(updatedElement.duration).toBe(7);
+		expect(updatedElement.duration).toBe(mediaTime({ ticks: 7 }));
 		expect(Number.isInteger(updatedElement.duration)).toBe(true);
 	});
 });

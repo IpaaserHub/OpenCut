@@ -117,8 +117,25 @@ export class VideoCache {
 	}): Promise<WrappedCanvas | null> {
 		if (!sinkData.iterator) return null;
 
+		// The exits below assume decoded timestamps advance monotonically past
+		// targetTime + 1.0. Variable-frame-rate or malformed streams can yield
+		// stalled/non-monotonic timestamps and loop forever, hanging the
+		// preview — bound the scan and fall back to a fresh seek instead.
+		const maxIterations = 2_000;
+		let iterations = 0;
+
 		try {
 			while (true) {
+				iterations += 1;
+				if (iterations > maxIterations) {
+					console.warn(
+						`Video frame iterator made no progress after ${maxIterations} frames (target ${targetTime}s); restarting from a seek.`,
+					);
+					await sinkData.iterator.return();
+					sinkData.iterator = null;
+					break;
+				}
+
 				// Wait for any pending prefetch to finish before touching iterator
 				if (sinkData.prefetching && sinkData.prefetchPromise) {
 					await sinkData.prefetchPromise;

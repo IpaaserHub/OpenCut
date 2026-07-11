@@ -1,0 +1,75 @@
+name: Deploy
+
+# One deploy at a time; a queued push waits for the running deploy to finish.
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "*.md"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    env:
+      # NEXT_PUBLIC_* values are inlined into the client bundle at build time.
+      # Set repository Variables (Settings → Secrets and variables → Actions →
+      # Variables) to override the defaults below.
+      NEXT_PUBLIC_SITE_URL: ${{ vars.NEXT_PUBLIC_SITE_URL || 'https://tkdir.com' }}
+      NEXT_PUBLIC_MARBLE_API_URL: ${{ vars.NEXT_PUBLIC_MARBLE_API_URL || 'https://api.marblecms.com' }}
+      # Server-side values are read at runtime from the Cloudflare Worker's
+      # variables/secrets — these only need to satisfy the env validation that
+      # runs during the build. Set repository Secrets to use real values.
+      DATABASE_URL: ${{ secrets.DATABASE_URL || 'postgresql://opencut:opencut@localhost:5432/opencut' }}
+      BETTER_AUTH_SECRET: ${{ secrets.BETTER_AUTH_SECRET || 'build-time-placeholder' }}
+      UPSTASH_REDIS_REST_URL: ${{ secrets.UPSTASH_REDIS_REST_URL || 'http://localhost:8079' }}
+      UPSTASH_REDIS_REST_TOKEN: ${{ secrets.UPSTASH_REDIS_REST_TOKEN || 'build-time-placeholder' }}
+      MARBLE_WORKSPACE_KEY: ${{ secrets.MARBLE_WORKSPACE_KEY || 'placeholder' }}
+      FREESOUND_CLIENT_ID: ${{ secrets.FREESOUND_CLIENT_ID || 'placeholder' }}
+      FREESOUND_API_KEY: ${{ secrets.FREESOUND_API_KEY || 'placeholder' }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      ANTHROPIC_MODEL: ${{ vars.ANTHROPIC_MODEL }}
+
+    steps:
+      - name: Check Cloudflare credentials
+        run: |
+          missing=0
+          if [ -z "${{ secrets.CLOUDFLARE_API_TOKEN }}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN is not set. Add it in Settings → Secrets and variables → Actions → Secrets (token needs the 'Workers Scripts: Edit' permission)."
+            missing=1
+          fi
+          if [ -z "${{ secrets.CLOUDFLARE_ACCOUNT_ID }}" ]; then
+            echo "::error::CLOUDFLARE_ACCOUNT_ID is not set. Add it in Settings → Secrets and variables → Actions → Secrets (find the ID on the Cloudflare dashboard's Workers & Pages overview)."
+            missing=1
+          fi
+          exit $missing
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Bun
+        uses: oven-sh/setup-bun@735343b667d3e6f658f44d0eca948eb6282f2b76
+        with:
+          bun-version: 1.2.18
+
+      - name: Cache Bun modules
+        uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ runner.os }}-bun-1.2.18-${{ hashFiles('bun.lock') }}
+
+      - name: Install dependencies
+        working-directory: apps/web
+        run: bun install
+
+      - name: Build and deploy to Cloudflare Workers
+        working-directory: apps/web
+        run: bun run deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

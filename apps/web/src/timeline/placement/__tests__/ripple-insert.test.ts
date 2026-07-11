@@ -7,15 +7,23 @@ import type {
 	VideoTrack,
 } from "@/timeline";
 
-mock.module("opencut-wasm", () => ({
-	TICKS_PER_SECOND: () => 1,
+// Timeline tests express positions in tiny raw ticks (1 tick = 1 second), so
+// stub the tick lattice instead of using the real 120000-ticks/s constants.
+mock.module("@/wasm/time-math", () => ({
+	TICKS_PER_SECOND: 1,
 	mediaTimeFromSeconds: ({ seconds }: { seconds: number }) =>
 		Math.round(seconds),
 	mediaTimeToSeconds: ({ time }: { time: number }) => time,
 	roundToFrame: ({ time }: { time: number }) => time,
+	floorToFrame: ({ time }: { time: number }) => time,
+	isFrameAligned: () => true,
+	mediaTimeFromFrame: ({ frame }: { frame: number }) => frame,
 	snappedSeekTime: ({ time }: { time: number }) => time,
 	lastFrameTime: ({ duration }: { duration: number }) => duration,
 	parseTimecode: () => null,
+	formatTimecode: () => "",
+	guessTimecodeFormat: () => undefined,
+	ticksPerFrame: () => 1,
 }));
 
 const [
@@ -136,7 +144,7 @@ describe("ripple insert", () => {
 
 		expect(
 			updated?.overlay[0].elements.map((element) => element.startTime),
-		).toEqual([0, 14, 24]);
+		).toEqual([0, 14, 24].map((ticks) => mediaTime({ ticks })));
 	});
 
 	test("does not insert through the middle of an existing element", () => {
@@ -176,12 +184,12 @@ describe("ripple insert", () => {
 		});
 
 		// Only the graphic track shifts; the video (main) track stays put.
-		expect(updated.overlay[0].elements.map((element) => element.startTime)).toEqual([
-			0, 14,
-		]);
-		expect(updated.main.elements.map((element) => element.startTime)).toEqual([
-			0, 10,
-		]);
+		expect(updated.overlay[0].elements.map((element) => element.startTime)).toEqual(
+			[0, 14].map((ticks) => mediaTime({ ticks })),
+		);
+		expect(updated.main.elements.map((element) => element.startTime)).toEqual(
+			[0, 10].map((ticks) => mediaTime({ ticks })),
+		);
 	});
 
 	test("timeline ripple shifts later elements across track types", () => {
@@ -205,12 +213,12 @@ describe("ripple insert", () => {
 			duration: mediaTime({ ticks: 4 }),
 		});
 
-		expect(updated.main.elements.map((element) => element.startTime)).toEqual([
-			0, 14,
-		]);
+		expect(updated.main.elements.map((element) => element.startTime)).toEqual(
+			[0, 14].map((ticks) => mediaTime({ ticks })),
+		);
 		expect(
 			updated.overlay[0].elements.map((element) => element.startTime),
-		).toEqual([14]);
+		).toEqual([14].map((ticks) => mediaTime({ ticks })));
 	});
 
 	test("drop target snaps near a seam and marks same-track ripple insertion", () => {

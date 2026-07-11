@@ -1,15 +1,23 @@
 import { describe, expect, mock, test } from "bun:test";
 import type { SceneTracks, VideoElement, VideoTrack } from "@/timeline";
 
-mock.module("opencut-wasm", () => ({
-	TICKS_PER_SECOND: () => 1,
+// Timeline tests express positions in tiny raw ticks (1 tick = 1 second), so
+// stub the tick lattice instead of using the real 120000-ticks/s constants.
+mock.module("@/wasm/time-math", () => ({
+	TICKS_PER_SECOND: 1,
 	mediaTimeFromSeconds: ({ seconds }: { seconds: number }) =>
 		Math.round(seconds),
 	mediaTimeToSeconds: ({ time }: { time: number }) => time,
 	roundToFrame: ({ time }: { time: number }) => time,
+	floorToFrame: ({ time }: { time: number }) => time,
+	isFrameAligned: () => true,
+	mediaTimeFromFrame: ({ frame }: { frame: number }) => frame,
 	snappedSeekTime: ({ time }: { time: number }) => time,
 	lastFrameTime: ({ duration }: { duration: number }) => duration,
 	parseTimecode: () => null,
+	formatTimecode: () => "",
+	guessTimecodeFormat: () => undefined,
+	ticksPerFrame: () => 1,
 }));
 
 const [{ buildMoveGroup, resolveGroupMove }, { mediaTime, ZERO_MEDIA_TIME }] =
@@ -114,13 +122,13 @@ describe("resolveGroupMove", () => {
 					sourceTrackId: "video-1",
 					targetTrackId: "video-1",
 					elementId: "a",
-					newStartTime: 30,
+					newStartTime: mediaTime({ ticks: 30 }),
 				},
 				{
 					sourceTrackId: "video-1",
 					targetTrackId: "video-1",
 					elementId: "b",
-					newStartTime: 40,
+					newStartTime: mediaTime({ ticks: 40 }),
 				},
 			],
 			createTracks: [],
@@ -170,13 +178,13 @@ describe("resolveGroupMove", () => {
 					sourceTrackId: "video-1",
 					targetTrackId: "new-video-1",
 					elementId: "a",
-					newStartTime: 30,
+					newStartTime: mediaTime({ ticks: 30 }),
 				},
 				{
 					sourceTrackId: "video-1",
 					targetTrackId: "new-video-1",
 					elementId: "b",
-					newStartTime: 40,
+					newStartTime: mediaTime({ ticks: 40 }),
 				},
 			],
 			createTracks: [
@@ -238,7 +246,7 @@ describe("resolveGroupMove", () => {
 				sourceTrackId: "video-1",
 				targetTrackId: "video-1",
 				elementId: "a",
-				newStartTime: 10,
+				newStartTime: mediaTime({ ticks: 10 }),
 			},
 		]);
 	});

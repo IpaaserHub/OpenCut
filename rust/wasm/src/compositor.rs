@@ -24,6 +24,17 @@ thread_local! {
     static COMPOSITOR_RUNTIME: RefCell<Option<CompositorRuntime>> = const { RefCell::new(None) };
 }
 
+// A panic while the runtime is borrowed (e.g. an unwrap inside wgpu during
+// render_frame) aborts without unwinding and leaves the RefCell flagged as
+// borrowed forever. try_borrow* + this error turn every later call into a
+// clean, catchable JS error instead of a second panic ("RefCell already
+// borrowed" -> unreachable trap) that poisons unrelated wasm exports.
+fn compositor_runtime_unavailable() -> JsValue {
+    JsValue::from_str(
+        "Compositor runtime is unavailable (poisoned by a previous GPU panic). Reload the page to recover.",
+    )
+}
+
 #[wasm_bindgen(js_name = initCompositor)]
 pub fn init_compositor(width: u32, height: u32) -> Result<(), JsValue> {
     with_gpu_runtime(|gpu_runtime| {
@@ -57,15 +68,17 @@ pub fn init_compositor(width: u32, height: u32) -> Result<(), JsValue> {
             .map_err(|error| JsValue::from_str(&error.to_string()))?;
 
         COMPOSITOR_RUNTIME.with(|runtime| {
-            runtime.replace(Some(CompositorRuntime {
+            let mut borrow = runtime
+                .try_borrow_mut()
+                .map_err(|_| compositor_runtime_unavailable())?;
+            *borrow = Some(CompositorRuntime {
                 canvas,
                 compositor,
                 surface,
                 surface_size: (width, height),
-            }));
-        });
-
-        Ok(())
+            });
+            Ok(())
+        })
     })
 }
 
@@ -73,7 +86,9 @@ pub fn init_compositor(width: u32, height: u32) -> Result<(), JsValue> {
 pub fn resize_compositor(width: u32, height: u32) -> Result<(), JsValue> {
     with_gpu_runtime(|gpu_runtime| {
         COMPOSITOR_RUNTIME.with(|runtime| {
-            let mut borrow = runtime.borrow_mut();
+            let mut borrow = runtime
+                .try_borrow_mut()
+                .map_err(|_| compositor_runtime_unavailable())?;
             let Some(runtime) = borrow.as_mut() else {
                 return Err(JsValue::from_str(
                     "Compositor is not initialized. Call initCompositor() first.",
@@ -96,7 +111,9 @@ pub fn resize_compositor(width: u32, height: u32) -> Result<(), JsValue> {
 #[wasm_bindgen(js_name = getCompositorCanvas)]
 pub fn get_compositor_canvas() -> Result<web_sys::HtmlCanvasElement, JsValue> {
     COMPOSITOR_RUNTIME.with(|runtime| {
-        let borrow = runtime.borrow();
+        let borrow = runtime
+            .try_borrow()
+            .map_err(|_| compositor_runtime_unavailable())?;
         let Some(runtime) = borrow.as_ref() else {
             return Err(JsValue::from_str(
                 "Compositor is not initialized. Call initCompositor() first.",
@@ -117,7 +134,9 @@ pub fn upload_texture(options: JsValue) -> Result<(), JsValue> {
 
     with_gpu_runtime(|gpu_runtime| {
         COMPOSITOR_RUNTIME.with(|runtime| {
-            let mut borrow = runtime.borrow_mut();
+            let mut borrow = runtime
+                .try_borrow_mut()
+                .map_err(|_| compositor_runtime_unavailable())?;
             let Some(runtime) = borrow.as_mut() else {
                 return Err(JsValue::from_str(
                     "Compositor is not initialized. Call initCompositor() first.",
@@ -140,7 +159,9 @@ pub fn upload_texture(options: JsValue) -> Result<(), JsValue> {
 #[wasm_bindgen(js_name = releaseTexture)]
 pub fn release_texture(id: String) -> Result<(), JsValue> {
     COMPOSITOR_RUNTIME.with(|runtime| {
-        let mut borrow = runtime.borrow_mut();
+        let mut borrow = runtime
+            .try_borrow_mut()
+            .map_err(|_| compositor_runtime_unavailable())?;
         let Some(runtime) = borrow.as_mut() else {
             return Err(JsValue::from_str(
                 "Compositor is not initialized. Call initCompositor() first.",
@@ -162,7 +183,9 @@ pub fn render_frame(options: JsValue) -> Result<(), JsValue> {
 
     with_gpu_runtime(|gpu_runtime| {
         COMPOSITOR_RUNTIME.with(|runtime| {
-            let mut borrow = runtime.borrow_mut();
+            let mut borrow = runtime
+                .try_borrow_mut()
+                .map_err(|_| compositor_runtime_unavailable())?;
             let Some(runtime) = borrow.as_mut() else {
                 return Err(JsValue::from_str(
                     "Compositor is not initialized. Call initCompositor() first.",

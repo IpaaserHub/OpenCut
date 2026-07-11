@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { useEditor } from "@/editor/use-editor";
-import { formatTimecode } from "opencut-wasm";
+import { formatTimecode } from "@/wasm/time-math";
 import { invokeAction } from "@/actions";
 import { useKeyboardShortcutsHelp } from "@/actions/use-keyboard-shortcuts-help";
 import { EditableTimecode } from "@/components/editable-timecode";

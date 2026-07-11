@@ -1,3 +1,7 @@
+// Time math is intentionally pure TS (see ./time-math). It used to come from
+// `opencut-wasm`, but that module also hosts the GPU compositor: one wgpu
+// panic poisons the whole wasm instance, and every timeline interaction
+// (seek, snap, insert) died with it. Keep this import off `opencut-wasm`.
 import {
 	lastFrameTime as _lastFrameTime,
 	parseTimecode as _parseTimecode,
@@ -8,7 +12,7 @@ import {
 	mediaTimeToSeconds as _mediaTimeToSeconds,
 	type FrameRate,
 	type TimeCodeFormat,
-} from "opencut-wasm";
+} from "./time-math";
 
 /**
  * Integer-tick time. Mirrors `MediaTime(i64)` in `rust/crates/time/src/media_time.rs`.
@@ -24,7 +28,7 @@ import {
  */
 export type MediaTime = number & { readonly __mediaTime: unique symbol };
 
-export const TICKS_PER_SECOND = _TICKS_PER_SECOND();
+export const TICKS_PER_SECOND = _TICKS_PER_SECOND;
 
 function isMediaTime(value: number): value is MediaTime {
 	return Number.isInteger(value);

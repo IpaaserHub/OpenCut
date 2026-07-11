@@ -1,0 +1,16 @@
+diff --git a/dist/plugins/inline-require-resolve.js b/dist/plugins/inline-require-resolve.js
+index fdbea020c91d36cd688d8952af891f349095563c..a7caa633ee934bca67708e09f0e068ce64e18262 100644
+--- a/dist/plugins/inline-require-resolve.js
++++ b/dist/plugins/inline-require-resolve.js
+@@ -13,7 +13,10 @@ export const inlineRequireResolvePlugin = {
+     setup: (build) => {
+         build.onLoad({ filter: /\.(js|ts|mjs|cjs)$/ }, async (args) => {
+             const source = await fs.promises.readFile(args.path, "utf-8");
+-            const transformed = source.replace(/require\.resolve\((?<quote>['"])((?:\\.|.)*?)\k<quote>\)/g, (_, quote, modulePath) => {
++            // Negative lookbehind: skip `__require.resolve(...)` (esbuild CJS shims,
++            // e.g. fdir's dist) and member accesses like `foo.require.resolve(...)` —
++            // inlining those leaves the prefix behind and produces invalid syntax.
++            const transformed = source.replace(/(?<![\w$.])require\.resolve\((?<quote>['"])((?:\\.|.)*?)\k<quote>\)/g, (_, quote, modulePath) => {
+                 try {
+                     return JSON.stringify(createRequire(args.path).resolve(modulePath));
+                 }

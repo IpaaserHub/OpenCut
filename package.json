@@ -46,5 +46,8 @@
   },
   "trustedDependencies": [
     "@tailwindcss/oxide"
-  ]
+  ],
+  "patchedDependencies": {
+    "@opennextjs/aws@3.10.4": "patches/@opennextjs%2Faws@3.10.4.patch"
+  }
 }

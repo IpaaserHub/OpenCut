@@ -16,6 +16,21 @@ export type CanvasRendererParams = {
 	fps: FrameRate;
 };
 
+// The wasm compositor is one global surface + texture cache shared by every
+// CanvasRenderer (live preview, project thumbnails, snapshots, export). Two
+// interleaved render sequences corrupt each other: syncTextures diff-releases
+// the other caller's textures between its syncTextures and renderFrame, and a
+// mid-sequence resize reconfigures the surface under the other render. That
+// race can surface as wgpu errors, which panic and poison the whole wasm
+// instance — so every resolve→sync→renderFrame sequence takes this lock.
+let compositorQueue: Promise<unknown> = Promise.resolve();
+
+function withCompositorLock<T>(fn: () => Promise<T>): Promise<T> {
+	const result = compositorQueue.then(fn);
+	compositorQueue = result.catch(() => undefined);
+	return result;
+}
+
 export class CanvasRenderer {
 	canvas: OffscreenCanvas;
 	context: OffscreenCanvasRenderingContext2D;
@@ -51,6 +66,16 @@ export class CanvasRenderer {
 	}
 
 	async render({ node, time }: { node: AnyBaseNode; time: number }) {
+		await withCompositorLock(() => this.renderLocked({ node, time }));
+	}
+
+	private async renderLocked({
+		node,
+		time,
+	}: {
+		node: AnyBaseNode;
+		time: number;
+	}) {
 		await measureSpanAsync({
 			name: "resolve",
 			fn: () => resolveRenderTree({ node, renderer: this, time }),
@@ -82,23 +107,27 @@ export class CanvasRenderer {
 		time: number;
 		targetCanvas: HTMLCanvasElement;
 	}) {
-		await this.render({ node, time });
+		// The copy-out must happen inside the lock too, before a concurrent
+		// caller overwrites the shared compositor surface.
+		await withCompositorLock(async () => {
+			await this.renderLocked({ node, time });
 
-		const ctx = targetCanvas.getContext("2d");
-		if (!ctx) {
-			throw new Error("Failed to get target canvas context");
-		}
+			const ctx = targetCanvas.getContext("2d");
+			if (!ctx) {
+				throw new Error("Failed to get target canvas context");
+			}
 
-		measureSpanSync({
-			name: "drawImage",
-			fn: () =>
-				ctx.drawImage(
-					wasmCompositor.getCanvas(),
-					0,
-					0,
-					targetCanvas.width,
-					targetCanvas.height,
-				),
+			measureSpanSync({
+				name: "drawImage",
+				fn: () =>
+					ctx.drawImage(
+						wasmCompositor.getCanvas(),
+						0,
+						0,
+						targetCanvas.width,
+						targetCanvas.height,
+					),
+			});
 		});
 		onRenderPerfFrameComplete();
 	}

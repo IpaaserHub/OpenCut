@@ -22,7 +22,11 @@ export function getTimelineZoomMin({
 	const zoomToFit =
 		availableWidth / (safeDurationSeconds * BASE_TIMELINE_PIXELS_PER_SECOND);
 
-	return Math.min(TIMELINE_ZOOM_MAX, zoomToFit);
+	// Never magnify past 1:1 (the base 50px/s scale) just to fill the width.
+	// Short clips should sit at natural size with empty timeline to their
+	// right, not be blown up to span the whole panel. Long content still fits
+	// by zooming out (zoomToFit < 1).
+	return Math.min(TIMELINE_ZOOM_MAX, zoomToFit, 1);
 }
 
 export function getTimelinePaddingPx({

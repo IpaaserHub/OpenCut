@@ -20,6 +20,7 @@ interface VideoSinkData {
 export class VideoCache {
 	private sinks = new Map<string, VideoSinkData>();
 	private initPromises = new Map<string, Promise<void>>();
+	private failedSinks = new Set<string>();
 	private frameChain = new Map<string, Promise<unknown>>();
 	private seekGenerations = new Map<string, number>();
 
@@ -32,7 +33,18 @@ export class VideoCache {
 		file: File;
 		time: number;
 	}): Promise<WrappedCanvas | null> {
-		await this.ensureSink({ mediaId, file });
+		// A sink that failed to initialize (e.g. undecodable codec) will fail
+		// again on every frame — skip instead of re-probing the file per tick.
+		if (this.failedSinks.has(mediaId)) {
+			return null;
+		}
+
+		try {
+			await this.ensureSink({ mediaId, file });
+		} catch {
+			this.failedSinks.add(mediaId);
+			return null;
+		}
 
 		const sinkData = this.sinks.get(mediaId);
 		if (!sinkData) return null;
@@ -312,6 +324,7 @@ export class VideoCache {
 		}
 
 		this.initPromises.delete(mediaId);
+		this.failedSinks.delete(mediaId);
 		this.frameChain.delete(mediaId);
 		this.seekGenerations.delete(mediaId);
 	}
@@ -320,6 +333,7 @@ export class VideoCache {
 		for (const [mediaId] of this.sinks) {
 			this.clearVideo({ mediaId });
 		}
+		this.failedSinks.clear();
 	}
 
 	getStats() {
